@@ -368,6 +368,7 @@ async function handleStreams(req, res, configStr) {
             name: formatted.name,
             title: formatted.title,
             infoHash: formatted.infoHash,
+            sources: formatted.sources,
             resolution: formatted.resolution,
             seeders: formatted.seeders
           });
@@ -385,6 +386,7 @@ async function handleStreams(req, res, configStr) {
           name: formatted.name,
           title: formatted.title,
           infoHash: formatted.infoHash,
+          sources: formatted.sources,
           resolution: formatted.resolution,
           seeders: formatted.seeders
         });
