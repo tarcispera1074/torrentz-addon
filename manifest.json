@@ -1,6 +1,6 @@
 {
   "id": "community.torrentz.addon",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "name": "Torrentz",
   "description": "High-speed torrent scraper for ThePirateBay, 1337x, LimeTorrents, and RARBG with Debrid support",
   "resources": [
@@ -18,6 +18,28 @@
     "torrentz:"
   ],
   "catalogs": [
+    {
+      "type": "movie",
+      "id": "torrentz_movies",
+      "name": "Torrentz Movies",
+      "extra": [
+        {
+          "name": "search",
+          "isRequired": false
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "torrentz_series",
+      "name": "Torrentz Series",
+      "extra": [
+        {
+          "name": "search",
+          "isRequired": false
+        }
+      ]
+    },
     {
       "type": "other",
       "id": "torrentz_search",

@@ -2,20 +2,17 @@ const cheerio = require('cheerio');
 const { client } = require('../utils/http');
 const { extractInfoHash, parseSizeToBytes } = require('../utils/parser');
 
-const MIRRORS = [
+const PRIMARY_MIRRORS = [
   'https://www.limetorrents.fun',
-  'https://www.limetorrents.lol',
-  'https://limetorrents.pro',
-  'https://limetorrents.zone'
+  'https://www.limetorrents.lol'
 ];
 
 async function searchLimeTorrents(query) {
   const results = [];
-
-  for (const domain of MIRRORS) {
-    const url = `${domain}/search/all/${encodeURIComponent(query)}/`;
+  for (const domain of PRIMARY_MIRRORS) {
     try {
-      const res = await client.get(url, { timeout: 4500 });
+      const url = `${domain}/search/all/${encodeURIComponent(query)}/`;
+      const res = await client.get(url, { timeout: 3000 });
       if (!res.data || res.status !== 200) continue;
 
       const $ = cheerio.load(res.data);
@@ -24,15 +21,9 @@ async function searchLimeTorrents(query) {
         const nameAnchor = row.find('.tt-name a').last();
         const rawTitle = nameAnchor.text().trim();
         const href = nameAnchor.attr('href') || '';
-
         if (!rawTitle || !href) return;
 
-        let infoHash = null;
-        const hashInUrl = href.match(/torrent-([a-fA-F0-9]{40})/i);
-        if (hashInUrl) {
-          infoHash = hashInUrl[1].toLowerCase();
-        }
-
+        let infoHash = href.match(/torrent-([a-fA-F0-9]{40})/i)?.[1]?.toLowerCase();
         const magnetHref = row.find('a[href^="magnet:?"]').attr('href');
         if (magnetHref) {
           infoHash = extractInfoHash(magnetHref) || infoHash;
@@ -53,11 +44,8 @@ async function searchLimeTorrents(query) {
       });
 
       if (results.length > 0) return results;
-    } catch (err) {
-      // Try next mirror
-    }
+    } catch (e) {}
   }
-
   return results;
 }
 

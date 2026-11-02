@@ -24,13 +24,29 @@ function createManifest(config = DEFAULT_CONFIG) {
 
   return {
     id: 'community.torrentz.addon',
-    version: '1.0.0',
+    version: '1.0.1',
     name,
     description,
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series', 'other'],
     idPrefixes: ['tt', 'torrentz:'],
     catalogs: [
+      {
+        type: 'movie',
+        id: 'torrentz_movies',
+        name: 'Torrentz Movies',
+        extra: [
+          { name: 'search', isRequired: false }
+        ]
+      },
+      {
+        type: 'series',
+        id: 'torrentz_series',
+        name: 'Torrentz Series',
+        extra: [
+          { name: 'search', isRequired: false }
+        ]
+      },
       {
         type: 'other',
         id: 'torrentz_search',
@@ -47,8 +63,9 @@ function createManifest(config = DEFAULT_CONFIG) {
   };
 }
 
-// 1. Health check & configuration UI
+// 1. Health check, debug & configuration UI
 app.get('/healthz', (req, res) => res.status(200).json({ status: 'ok' }));
+
 app.get('/debug-search', async (req, res) => {
   const q = req.query.q || 'Blair Williams';
   const tpbScraper = require('./scrapers/tpb');
@@ -84,6 +101,7 @@ app.get('/debug-search', async (req, res) => {
     }
   });
 });
+
 app.get('/', (req, res) => res.redirect('/configure'));
 app.get('/configure', (req, res) => {
   res.sendFile(path.join(__dirname, 'views', 'configure.html'));
@@ -102,13 +120,13 @@ app.get('/:config/manifest.json', (req, res) => {
   res.json(createManifest(config));
 });
 
-// 3. Catalog handler (enables direct searching in Stremio/Nuvio search bar!)
+// 3. Catalog handler (searches across Movies, Series, and Other in Stremio/Nuvio)
 async function handleCatalog(req, res, configStr) {
   const { type, id, extra } = req.params;
   const config = decodeConfig(configStr);
 
-  let searchQuery = '';
-  if (extra) {
+  let searchQuery = req.query.search || '';
+  if (!searchQuery && extra) {
     const match = extra.match(/search=([^&]+)/);
     if (match) {
       searchQuery = decodeURIComponent(match[1]);
@@ -116,23 +134,23 @@ async function handleCatalog(req, res, configStr) {
   }
 
   if (!searchQuery) {
-    return res.json({ metas: [] });
+    // If user opens catalog without searching, show top popular/trending torrents
+    searchQuery = type === 'movie' ? '2024' : (type === 'series' ? 'S01E01' : '1080p');
   }
 
-  console.log(`[Catalog Search] Querying torrents for: "${searchQuery}"`);
+  console.log(`[Catalog Search] Querying torrents for: "${searchQuery}" (${type})`);
   try {
     const torrents = await searchAll(searchQuery, config.providers);
-    const metas = torrents.slice(0, 40).map(t => {
-      // Save item into cache for instant meta lookup
+    const metas = torrents.slice(0, 50).map(t => {
+      // Store into cache for meta and stream lookup
       cache.set(`torrent:${t.infoHash}`, t, 24 * 60 * 60 * 1000);
 
       return {
         id: `torrentz:${t.infoHash}`,
-        type: 'other',
+        type: type || 'movie',
         name: t.rawTitle,
         poster: 'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=400&auto=format&fit=crop&q=60',
-        posterShape: 'square',
-        banner: 'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=800&auto=format&fit=crop&q=60',
+        posterShape: 'poster',
         description: `👤 ${t.seeders} seeders | 💾 ${formatSize(t.sizeBytes)} | ⚙️ ${t.source}`
       };
     });
@@ -149,7 +167,7 @@ app.get('/catalog/:type/:id/:extra.json', (req, res) => handleCatalog(req, res, 
 app.get('/:config/catalog/:type/:id.json', (req, res) => handleCatalog(req, res, req.params.config));
 app.get('/:config/catalog/:type/:id/:extra.json', (req, res) => handleCatalog(req, res, req.params.config));
 
-// 4. Meta handler (for items clicked from the Search Catalog)
+// 4. Meta handler (for items clicked from the search results)
 async function handleMeta(req, res, configStr) {
   const { type, id } = req.params;
 
@@ -165,10 +183,10 @@ async function handleMeta(req, res, configStr) {
     return res.json({
       meta: {
         id,
-        type: 'other',
+        type: type || 'movie',
         name,
         poster: 'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=400&auto=format&fit=crop&q=60',
-        posterShape: 'square',
+        posterShape: 'poster',
         description
       }
     });
@@ -188,7 +206,7 @@ async function handleStreams(req, res, configStr) {
   try {
     let torrents = [];
 
-    // Case A: Stream requested from Catalog Search item (torrentz:{infoHash})
+    // Case A: Stream requested from Catalog item (torrentz:{infoHash})
     if (id.startsWith('torrentz:')) {
       const hash = id.replace('torrentz:', '').toLowerCase();
       const cached = cache.get(`torrent:${hash}`);

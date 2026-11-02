@@ -2,20 +2,17 @@ const cheerio = require('cheerio');
 const { client } = require('../utils/http');
 const { extractInfoHash, parseSizeToBytes } = require('../utils/parser');
 
-const MIRRORS = [
+const PRIMARY_MIRRORS = [
   'https://rargb.to',
-  'https://rarbg.to',
-  'https://rarbgget.org',
-  'https://rarbg.unblockninja.com'
+  'https://rarbg.to'
 ];
 
 async function searchRARBG(query) {
   const results = [];
-
-  for (const domain of MIRRORS) {
-    const url = `${domain}/search/?search=${encodeURIComponent(query)}`;
+  for (const domain of PRIMARY_MIRRORS) {
     try {
-      const res = await client.get(url, { timeout: 4500 });
+      const url = `${domain}/search/?search=${encodeURIComponent(query)}`;
+      const res = await client.get(url, { timeout: 3000 });
       if (!res.data || res.status !== 200) continue;
 
       const $ = cheerio.load(res.data);
@@ -24,20 +21,11 @@ async function searchRARBG(query) {
         const titleAnchor = row.find('td:nth-child(2) a').first();
         const rawTitle = titleAnchor.text().trim();
         const href = titleAnchor.attr('href') || '';
-
         if (!rawTitle) return;
 
-        let infoHash = null;
-        const magnetLink = row.find('a[href^="magnet:?"]').attr('href');
-        if (magnetLink) {
-          infoHash = extractInfoHash(magnetLink);
-        }
-
+        let infoHash = extractInfoHash(row.find('a[href^="magnet:?"]').attr('href'));
         if (!infoHash) {
-          const hashMatch = href.match(/([a-fA-F0-9]{40})/);
-          if (hashMatch) {
-            infoHash = hashMatch[1].toLowerCase();
-          }
+          infoHash = href.match(/([a-fA-F0-9]{40})/)?.[1]?.toLowerCase();
         }
 
         const sizeText = row.find('td:nth-child(5)').text().trim();
@@ -55,11 +43,8 @@ async function searchRARBG(query) {
       });
 
       if (results.length > 0) return results;
-    } catch (err) {
-      // Try next mirror
-    }
+    } catch (e) {}
   }
-
   return results;
 }
 
