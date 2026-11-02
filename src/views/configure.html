@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Torrentz - Stremio Addon Configuration</title>
+  <style>
+    :root {
+      --bg: #0e1017;
+      --card-bg: #181b26;
+      --accent: #6c5ce7;
+      --accent-hover: #5849d4;
+      --text: #f1f2f6;
+      --text-muted: #8b92a5;
+      --border: #272c3d;
+      --success: #2ed573;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      width: 100%;
+      max-width: 580px;
+      padding: 2.2rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #a29bfe, #6c5ce7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.4rem;
+    }
+
+    .header p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .section {
+      margin-bottom: 1.6rem;
+    }
+
+    .section-title {
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+      font-weight: 600;
+    }
+
+    .grid-options {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.7rem 0.9rem;
+      cursor: pointer;
+      font-size: 0.92rem;
+      transition: all 0.2s ease;
+    }
+
+    .checkbox-label:hover {
+      background: rgba(108, 92, 231, 0.1);
+      border-color: var(--accent);
+    }
+
+    .checkbox-label input {
+      accent-color: var(--accent);
+      width: 16px;
+      height: 16px;
+    }
+
+    .input-group {
+      margin-top: 0.75rem;
+    }
+
+    select, input[type="text"], input[type="password"] {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    select:focus, input[type="text"]:focus, input[type="password"]:focus {
+      border-color: var(--accent);
+    }
+
+    .helper-text {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.4rem;
+    }
+
+    .helper-text a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .helper-text a:hover {
+      text-decoration: underline;
+    }
+
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+      margin-top: 2rem;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 0.9rem;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      border: none;
+      text-align: center;
+      text-decoration: none;
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--text);
+      color: var(--text);
+    }
+
+    #installSuccessNotice {
+      display: none;
+      text-align: center;
+      color: var(--success);
+      font-size: 0.85rem;
+      margin-top: 0.4rem;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="header">
+      <h1>Torrentz</h1>
+      <p>High-speed torrent & debrid stream scraper for Stremio</p>
+    </div>
+
+    <!-- Torrent Providers -->
+    <div class="section">
+      <div class="section-title">Torrent Providers</div>
+      <div class="grid-options">
+        <label class="checkbox-label">
+          <input type="checkbox" id="provider-tpb" value="tpb" checked>
+          <span>ThePirateBay</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="provider-1337x" value="1337x" checked>
+          <span>1337x</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="provider-limetorrents" value="limetorrents" checked>
+          <span>LimeTorrents</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="provider-rargb" value="rargb" checked>
+          <span>RARBG Mirrors</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Debrid Provider Selection -->
+    <div class="section">
+      <div class="section-title">Debrid Provider</div>
+      <select id="debridProvider" onchange="toggleDebridFields()">
+        <option value="none">None (Pure P2P Torrent Streaming)</option>
+        <option value="realdebrid">Real-Debrid</option>
+        <option value="alldebrid">AllDebrid</option>
+        <option value="premiumize">Premiumize</option>
+        <option value="torbox">TorBox</option>
+        <option value="debridlink">Debrid-Link</option>
+      </select>
+
+      <div class="input-group" id="debridKeyGroup" style="display: none;">
+        <input type="password" id="debridApiKey" placeholder="Enter your Debrid API Key / Token">
+        <div class="helper-text" id="debridKeyHelp"></div>
+        <label class="checkbox-label" style="margin-top: 0.75rem;">
+          <input type="checkbox" id="showP2PFallback" checked>
+          <span>Show P2P torrents if uncached on Debrid</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Max Streams per Resolution -->
+    <div class="section">
+      <div class="section-title">Max Results Per Resolution</div>
+      <select id="maxStreams">
+        <option value="3">3 streams</option>
+        <option value="5" selected>5 streams</option>
+        <option value="8">8 streams</option>
+        <option value="15">15 streams</option>
+      </select>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="actions">
+      <a href="#" id="installBtn" class="btn btn-primary">Install Addon to Stremio</a>
+      <button type="button" id="copyBtn" class="btn btn-secondary" onclick="copyManifestUrl()">Copy Manifest URL</button>
+      <div id="installSuccessNotice">Copied to clipboard! Paste it into Stremio's Addon search bar.</div>
+    </div>
+  </div>
+
+  <script>
+    const providerKeyLinks = {
+      realdebrid: '<a href="https://real-debrid.com/apitoken" target="_blank" rel="noopener">Find your Real-Debrid API Token here</a>',
+      alldebrid: '<a href="https://alldebrid.com/apikeys" target="_blank" rel="noopener">Generate your AllDebrid API Key here</a>',
+      premiumize: '<a href="https://www.premiumize.me/account" target="_blank" rel="noopener">Find your Premiumize API Pin/Key here</a>',
+      torbox: '<a href="https://torbox.app/settings" target="_blank" rel="noopener">Find your TorBox API Token in Account Settings</a>',
+      debridlink: '<a href="https://debrid-link.com/webapp/register" target="_blank" rel="noopener">Get your Debrid-Link API Key here</a>'
+    };
+
+    function toggleDebridFields() {
+      const select = document.getElementById('debridProvider');
+      const val = select.value;
+      const group = document.getElementById('debridKeyGroup');
+      const help = document.getElementById('debridKeyHelp');
+
+      if (val === 'none') {
+        group.style.display = 'none';
+      } else {
+        group.style.display = 'block';
+        help.innerHTML = providerKeyLinks[val] || '';
+      }
+      updateInstallLink();
+    }
+
+    function buildConfigObject() {
+      const providers = [];
+      ['tpb', '1337x', 'limetorrents', 'rargb'].forEach(p => {
+        if (document.getElementById(`provider-${p}`).checked) {
+          providers.push(p);
+        }
+      });
+
+      const debridProvider = document.getElementById('debridProvider').value;
+      const debridApiKey = document.getElementById('debridApiKey').value.trim();
+      const showP2PFallback = document.getElementById('showP2PFallback').checked;
+      const maxStreams = parseInt(document.getElementById('maxStreams').value, 10) || 5;
+
+      return {
+        providers,
+        debridProvider: debridProvider === 'none' ? null : debridProvider,
+        debridApiKey: debridProvider === 'none' ? '' : debridApiKey,
+        showP2PFallback,
+        maxStreamsPerResolution: maxStreams
+      };
+    }
+
+    function getEncodedConfig() {
+      const config = buildConfigObject();
+      const jsonStr = JSON.stringify(config);
+      return btoa(jsonStr).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    function getManifestUrl() {
+      const encoded = getEncodedConfig();
+      const origin = window.location.origin;
+      return `${origin}/${encoded}/manifest.json`;
+    }
+
+    function updateInstallLink() {
+      const url = getManifestUrl();
+      const stremioProtocolUrl = url.replace(/^https?:\/\//i, 'stremio://');
+      const installBtn = document.getElementById('installBtn');
+      installBtn.href = stremioProtocolUrl;
+    }
+
+    function copyManifestUrl() {
+      const url = getManifestUrl();
+      navigator.clipboard.writeText(url).then(() => {
+        const notice = document.getElementById('installSuccessNotice');
+        notice.style.display = 'block';
+        setTimeout(() => { notice.style.display = 'none'; }, 3500);
+      });
+    }
+
+    // Attach listeners
+    document.querySelectorAll('input, select').forEach(el => {
+      el.addEventListener('change', updateInstallLink);
+      el.addEventListener('input', updateInstallLink);
+    });
+
+    // Initial update
+    updateInstallLink();
+  </script>
+</body>
+</html>
