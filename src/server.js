@@ -42,20 +42,14 @@ function createManifest(config = DEFAULT_CONFIG) {
     ];
   } else if (mode === 'xxx' || mode === 'other') {
     id = 'community.torrentz.xxx';
-    name = 'Torrentz XXX (Adult & Other)';
-    description = 'Adult video & performer torrent scraper (Blair Williams, studio releases, etc.)';
-    types = ['movie', 'other'];
+    name = 'Torrentz XXX';
+    description = 'Adult video & performer torrent scraper';
+    types = ['movie'];
     catalogs = [
       {
         type: 'movie',
         id: 'torrentz_xxx',
         name: 'Torrentz XXX',
-        extra: [{ name: 'search', isRequired: false }]
-      },
-      {
-        type: 'other',
-        id: 'torrentz_other',
-        name: 'Torrentz Other',
         extra: [{ name: 'search', isRequired: false }]
       }
     ];
@@ -64,7 +58,7 @@ function createManifest(config = DEFAULT_CONFIG) {
     id = 'community.torrentz.addon';
     name = 'Torrentz (All-in-One)';
     description = 'Movies, TV series, adult performers & custom torrents';
-    types = ['movie', 'series', 'other'];
+    types = ['movie', 'series'];
     catalogs = [
       {
         type: 'movie',
@@ -76,12 +70,6 @@ function createManifest(config = DEFAULT_CONFIG) {
         type: 'series',
         id: 'torrentz_series',
         name: 'Torrentz Series',
-        extra: [{ name: 'search', isRequired: false }]
-      },
-      {
-        type: 'movie',
-        id: 'torrentz_xxx',
-        name: 'Torrentz XXX',
         extra: [{ name: 'search', isRequired: false }]
       }
     ];
