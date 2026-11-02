@@ -2,17 +2,17 @@
  * Default Addon Configuration
  */
 const DEFAULT_CONFIG = {
+  mode: 'all', // 'movies', 'xxx', 'all'
   providers: ['tpb', '1337x', 'limetorrents', 'rargb'],
   debridProvider: null, // 'realdebrid', 'alldebrid', 'premiumize', 'torbox', 'debridlink' or null
   debridApiKey: '',
-  showP2PFallback: true, // Show P2P torrents if Debrid isn't configured or cached
+  showP2PFallback: true,
   maxStreamsPerResolution: 4,
   resolutions: ['4k', '1080p', '720p', '480p']
 };
 
 /**
  * Decode config parameter from the URL path
- * Accepts base64 URL safe JSON or pipe-delimited string
  */
 function decodeConfig(configStr) {
   if (!configStr || configStr === 'manifest.json') {
@@ -29,7 +29,7 @@ function decodeConfig(configStr) {
     // Not valid base64 JSON, continue to pipe format
   }
 
-  // 2. Try pipe-delimited format (e.g. providers=tpb,1337x|debrid=realdebrid|key=123)
+  // 2. Try pipe-delimited format
   const config = { ...DEFAULT_CONFIG };
   try {
     const pairs = decodeURIComponent(configStr).split('|');
@@ -39,7 +39,9 @@ function decodeConfig(configStr) {
       const k = key.trim().toLowerCase();
       const v = value.trim();
 
-      if (k === 'providers') {
+      if (k === 'mode') {
+        config.mode = v.toLowerCase();
+      } else if (k === 'providers') {
         config.providers = v.split(',').map(s => s.trim().toLowerCase());
       } else if (k === 'debrid' || k === 'debridprovider') {
         config.debridProvider = v === 'none' ? null : v.toLowerCase();

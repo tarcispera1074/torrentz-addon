@@ -11,51 +11,95 @@ const cache = require('./utils/cache');
 const app = express();
 app.use(cors());
 
-// Manifest template
+// Manifest generator supporting split modes: 'movies', 'xxx', 'all'
 function createManifest(config = DEFAULT_CONFIG) {
+  const mode = config.mode || 'all';
+  let id = 'community.torrentz.addon';
   let name = 'Torrentz';
   let description = 'High-speed torrent scraper for ThePirateBay, 1337x, LimeTorrents, and RARBG';
+  let types = ['movie', 'series', 'other'];
+  let catalogs = [];
 
-  if (config.debridProvider) {
-    const prov = debrid.getProvider(config.debridProvider);
-    name += ` [${prov ? prov.name : config.debridProvider.toUpperCase()}]`;
-    description += ` with ${prov ? prov.name : config.debridProvider} Debrid support`;
-  }
-
-  return {
-    id: 'community.torrentz.addon',
-    version: '1.0.1',
-    name,
-    description,
-    resources: ['catalog', 'meta', 'stream'],
-    types: ['movie', 'series', 'other'],
-    idPrefixes: ['tt', 'torrentz:'],
-    catalogs: [
+  if (mode === 'movies') {
+    id = 'community.torrentz.movies';
+    name = 'Torrentz (Movies & TV)';
+    description = 'Mainstream Movies & TV Series torrent streams with Debrid support';
+    types = ['movie', 'series'];
+    catalogs = [
       {
         type: 'movie',
         id: 'torrentz_movies',
         name: 'Torrentz Movies',
-        extra: [
-          { name: 'search', isRequired: false }
-        ]
+        extra: [{ name: 'search', isRequired: false }]
       },
       {
         type: 'series',
         id: 'torrentz_series',
         name: 'Torrentz Series',
-        extra: [
-          { name: 'search', isRequired: false }
-        ]
+        extra: [{ name: 'search', isRequired: false }]
+      }
+    ];
+  } else if (mode === 'xxx' || mode === 'other') {
+    id = 'community.torrentz.xxx';
+    name = 'Torrentz XXX (Adult & Other)';
+    description = 'Adult video & performer torrent scraper (Blair Williams, studio releases, etc.)';
+    types = ['movie', 'other'];
+    catalogs = [
+      {
+        type: 'movie',
+        id: 'torrentz_xxx',
+        name: 'Torrentz XXX',
+        extra: [{ name: 'search', isRequired: false }]
       },
       {
         type: 'other',
-        id: 'torrentz_search',
-        name: 'Torrentz Search',
-        extra: [
-          { name: 'search', isRequired: false }
-        ]
+        id: 'torrentz_other',
+        name: 'Torrentz Other',
+        extra: [{ name: 'search', isRequired: false }]
       }
-    ],
+    ];
+  } else {
+    // Mode = 'all'
+    id = 'community.torrentz.addon';
+    name = 'Torrentz (All-in-One)';
+    description = 'Movies, TV series, adult performers & custom torrents';
+    types = ['movie', 'series', 'other'];
+    catalogs = [
+      {
+        type: 'movie',
+        id: 'torrentz_movies',
+        name: 'Torrentz Movies',
+        extra: [{ name: 'search', isRequired: false }]
+      },
+      {
+        type: 'series',
+        id: 'torrentz_series',
+        name: 'Torrentz Series',
+        extra: [{ name: 'search', isRequired: false }]
+      },
+      {
+        type: 'movie',
+        id: 'torrentz_xxx',
+        name: 'Torrentz XXX',
+        extra: [{ name: 'search', isRequired: false }]
+      }
+    ];
+  }
+
+  if (config.debridProvider) {
+    const prov = debrid.getProvider(config.debridProvider);
+    name += ` [${prov ? prov.name : config.debridProvider.toUpperCase()}]`;
+  }
+
+  return {
+    id,
+    version: '1.0.2',
+    name,
+    description,
+    resources: ['catalog', 'meta', 'stream'],
+    types,
+    idPrefixes: ['tt', 'torrentz:'],
+    catalogs,
     behaviorHints: {
       configurable: true,
       configurationRequired: false
@@ -134,8 +178,11 @@ async function handleCatalog(req, res, configStr) {
   }
 
   if (!searchQuery) {
-    // If user opens catalog without searching, show top popular/trending torrents
-    searchQuery = type === 'movie' ? '2024' : (type === 'series' ? 'S01E01' : '1080p');
+    if (id === 'torrentz_xxx') {
+      searchQuery = '1080p';
+    } else {
+      searchQuery = type === 'movie' ? '2024' : (type === 'series' ? 'S01E01' : '1080p');
+    }
   }
 
   console.log(`[Catalog Search] Querying torrents for: "${searchQuery}" (${type})`);
