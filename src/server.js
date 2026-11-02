@@ -113,30 +113,31 @@ app.get('/healthz', (req, res) => res.status(200).json({ status: 'ok' }));
 app.get('/test-raw-tpb', async (req, res) => {
   const axios = require('axios');
   const q = req.query.q || 'Blair Williams';
-  try {
-    const r = await axios.get(`https://apibay.org/q.php?q=${encodeURIComponent(q)}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'application/json'
-      },
-      timeout: 8000
-    });
-    res.json({
-      status: r.status,
-      headers: r.headers,
-      dataType: typeof r.data,
-      isArray: Array.isArray(r.data),
-      length: r.data?.length,
-      sample: r.data?.[0],
-      raw: r.data
-    });
-  } catch (err) {
-    res.status(500).json({
-      error: err.message,
-      status: err.response?.status,
-      data: err.response?.data
-    });
+  const urls = [
+    `https://apibay.org/q.php?q=${encodeURIComponent(q)}`,
+    `https://thepiratebay.party/search/${encodeURIComponent(q)}/1/99/0`,
+    `https://thehiddenbay.com/search/${encodeURIComponent(q)}/1/99/0`,
+    `https://pirateproxy.live/search/${encodeURIComponent(q)}/1/99/0`,
+    `https://tpb.cool/search/${encodeURIComponent(q)}/1/99/0`,
+    `https://torrents-csv.com/service/search?q=${encodeURIComponent(q)}`
+  ];
+
+  const results = {};
+  for (const url of urls) {
+    try {
+      const r = await axios.get(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        },
+        timeout: 4000
+      });
+      results[url] = { status: r.status, len: r.data?.length || 0, isJson: typeof r.data === 'object' };
+    } catch (e) {
+      results[url] = { error: e.message, status: e.response?.status };
+    }
   }
+
+  res.json(results);
 });
 
 app.get('/debug-search', async (req, res) => {
