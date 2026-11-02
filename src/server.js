@@ -49,6 +49,41 @@ function createManifest(config = DEFAULT_CONFIG) {
 
 // 1. Health check & configuration UI
 app.get('/healthz', (req, res) => res.status(200).json({ status: 'ok' }));
+app.get('/debug-search', async (req, res) => {
+  const q = req.query.q || 'Blair Williams';
+  const tpbScraper = require('./scrapers/tpb');
+  const x1337Scraper = require('./scrapers/1337x');
+  const limeScraper = require('./scrapers/limetorrents');
+  const rargbScraper = require('./scrapers/rargb');
+
+  const out = {};
+  try { out.tpb = await tpbScraper.search(q); } catch (e) { out.tpbError = e.message; }
+  try { out.x1337 = await x1337Scraper.search(q); } catch (e) { out.x1337Error = e.message; }
+  try { out.lime = await limeScraper.search(q); } catch (e) { out.limeError = e.message; }
+  try { out.rargb = await rargbScraper.search(q); } catch (e) { out.rargbError = e.message; }
+
+  res.json({
+    query: q,
+    counts: {
+      tpb: out.tpb?.length || 0,
+      x1337: out.x1337?.length || 0,
+      lime: out.lime?.length || 0,
+      rargb: out.rargb?.length || 0
+    },
+    samples: {
+      tpb: out.tpb?.[0],
+      x1337: out.x1337?.[0],
+      lime: out.lime?.[0],
+      rargb: out.rargb?.[0]
+    },
+    errors: {
+      tpb: out.tpbError,
+      x1337: out.x1337Error,
+      lime: out.limeError,
+      rargb: out.rargbError
+    }
+  });
+});
 app.get('/', (req, res) => res.redirect('/configure'));
 app.get('/configure', (req, res) => {
   res.sendFile(path.join(__dirname, 'views', 'configure.html'));
