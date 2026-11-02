@@ -5,7 +5,7 @@ const { decodeConfig, DEFAULT_CONFIG } = require('./config');
 const { getMetadata } = require('./metadata/cinemeta');
 const { searchAll } = require('./scrapers');
 const debrid = require('./debrid');
-const { formatStream } = require('./utils/parser');
+const { formatStream, formatSize } = require('./utils/parser');
 const cache = require('./utils/cache');
 
 const app = express();
@@ -27,10 +27,19 @@ function createManifest(config = DEFAULT_CONFIG) {
     version: '1.0.0',
     name,
     description,
-    resources: ['stream'],
-    types: ['movie', 'series'],
-    idPrefixes: ['tt'],
-    catalogs: [],
+    resources: ['catalog', 'meta', 'stream'],
+    types: ['movie', 'series', 'other'],
+    idPrefixes: ['tt', 'torrentz:'],
+    catalogs: [
+      {
+        type: 'other',
+        id: 'torrentz_search',
+        name: 'Torrentz Search',
+        extra: [
+          { name: 'search', isRequired: false }
+        ]
+      }
+    ],
     behaviorHints: {
       configurable: true,
       configurationRequired: false
@@ -38,7 +47,7 @@ function createManifest(config = DEFAULT_CONFIG) {
   };
 }
 
-// 1. Web configuration pages and health check
+// 1. Health check & configuration UI
 app.get('/healthz', (req, res) => res.status(200).json({ status: 'ok' }));
 app.get('/', (req, res) => res.redirect('/configure'));
 app.get('/configure', (req, res) => {
@@ -58,47 +67,137 @@ app.get('/:config/manifest.json', (req, res) => {
   res.json(createManifest(config));
 });
 
-// 3. Stream handlers
+// 3. Catalog handler (enables direct searching in Stremio/Nuvio search bar!)
+async function handleCatalog(req, res, configStr) {
+  const { type, id, extra } = req.params;
+  const config = decodeConfig(configStr);
+
+  let searchQuery = '';
+  if (extra) {
+    const match = extra.match(/search=([^&]+)/);
+    if (match) {
+      searchQuery = decodeURIComponent(match[1]);
+    }
+  }
+
+  if (!searchQuery) {
+    return res.json({ metas: [] });
+  }
+
+  console.log(`[Catalog Search] Querying torrents for: "${searchQuery}"`);
+  try {
+    const torrents = await searchAll(searchQuery, config.providers);
+    const metas = torrents.slice(0, 40).map(t => {
+      // Save item into cache for instant meta lookup
+      cache.set(`torrent:${t.infoHash}`, t, 24 * 60 * 60 * 1000);
+
+      return {
+        id: `torrentz:${t.infoHash}`,
+        type: 'other',
+        name: t.rawTitle,
+        poster: 'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=400&auto=format&fit=crop&q=60',
+        posterShape: 'square',
+        banner: 'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=800&auto=format&fit=crop&q=60',
+        description: `👤 ${t.seeders} seeders | 💾 ${formatSize(t.sizeBytes)} | ⚙️ ${t.source}`
+      };
+    });
+
+    res.json({ metas });
+  } catch (err) {
+    console.error('[Catalog Error]', err.message);
+    res.json({ metas: [] });
+  }
+}
+
+app.get('/catalog/:type/:id.json', (req, res) => handleCatalog(req, res, ''));
+app.get('/catalog/:type/:id/:extra.json', (req, res) => handleCatalog(req, res, ''));
+app.get('/:config/catalog/:type/:id.json', (req, res) => handleCatalog(req, res, req.params.config));
+app.get('/:config/catalog/:type/:id/:extra.json', (req, res) => handleCatalog(req, res, req.params.config));
+
+// 4. Meta handler (for items clicked from the Search Catalog)
+async function handleMeta(req, res, configStr) {
+  const { type, id } = req.params;
+
+  if (id.startsWith('torrentz:')) {
+    const infoHash = id.replace('torrentz:', '').toLowerCase();
+    const cached = cache.get(`torrent:${infoHash}`);
+
+    const name = cached ? cached.rawTitle : `Torrent ${infoHash.substring(0, 8)}`;
+    const description = cached 
+      ? `👤 ${cached.seeders} seeders | 💾 ${formatSize(cached.sizeBytes)} | ⚙️ ${cached.source}`
+      : `InfoHash: ${infoHash}`;
+
+    return res.json({
+      meta: {
+        id,
+        type: 'other',
+        name,
+        poster: 'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=400&auto=format&fit=crop&q=60',
+        posterShape: 'square',
+        description
+      }
+    });
+  }
+
+  res.json({ meta: null });
+}
+
+app.get('/meta/:type/:id.json', (req, res) => handleMeta(req, res, ''));
+app.get('/:config/meta/:type/:id.json', (req, res) => handleMeta(req, res, req.params.config));
+
+// 5. Stream handlers
 async function handleStreams(req, res, configStr) {
   const { type, id } = req.params;
   const config = decodeConfig(configStr);
 
   try {
-    // 1. Resolve Cinemeta metadata (IMDb ID -> Title + Season/Episode)
-    const meta = await getMetadata(type, id);
-    if (!meta || !meta.name) {
-      console.log(`[Stream] No metadata found for ${type}/${id}`);
-      return res.json({ streams: [] });
-    }
+    let torrents = [];
 
-    const searchQuery = meta.searchQuery;
-    console.log(`[Stream] Querying indexers for: "${searchQuery}" (${type})`);
+    // Case A: Stream requested from Catalog Search item (torrentz:{infoHash})
+    if (id.startsWith('torrentz:')) {
+      const hash = id.replace('torrentz:', '').toLowerCase();
+      const cached = cache.get(`torrent:${hash}`);
+      torrents = [{
+        rawTitle: cached ? cached.rawTitle : `Torrent Stream ${hash.substring(0, 8)}`,
+        infoHash: hash,
+        sizeBytes: cached ? cached.sizeBytes : 0,
+        seeders: cached ? cached.seeders : 1,
+        source: cached ? cached.source : 'Indexer'
+      }];
+    } 
+    // Case B: Stream requested from IMDb/Cinemeta item (tt...)
+    else {
+      const meta = await getMetadata(type, id);
+      if (!meta || !meta.name) {
+        console.log(`[Stream] No metadata found for ${type}/${id}`);
+        return res.json({ streams: [] });
+      }
 
-    // 2. Search cached streams or scrape indexers
-    const cacheKey = `streams:${searchQuery}`;
-    let torrents = cache.get(cacheKey);
+      const searchQuery = meta.searchQuery;
+      console.log(`[Stream] Querying indexers for: "${searchQuery}" (${type})`);
 
-    if (!torrents) {
-      torrents = await searchAll(searchQuery, config.providers);
-      cache.set(cacheKey, torrents, 15 * 60 * 1000); // Cache search for 15 mins
+      const cacheKey = `streams:${searchQuery}`;
+      torrents = cache.get(cacheKey);
+
+      if (!torrents) {
+        torrents = await searchAll(searchQuery, config.providers);
+        cache.set(cacheKey, torrents, 15 * 60 * 1000);
+      }
     }
 
     if (!torrents || torrents.length === 0) {
-      console.log(`[Stream] No torrents found for "${searchQuery}"`);
       return res.json({ streams: [] });
     }
 
-    // 3. Debrid instant availability check
+    // Debrid check
     let cachedHashes = new Set();
     const hasDebrid = Boolean(config.debridProvider && config.debridApiKey);
 
     if (hasDebrid) {
       const hashes = torrents.map(t => t.infoHash);
       cachedHashes = await debrid.checkCache(config.debridProvider, config.debridApiKey, hashes);
-      console.log(`[Debrid] ${cachedHashes.size} out of ${hashes.length} torrents cached on ${config.debridProvider}`);
     }
 
-    // 4. Format streams for Stremio
     const formattedStreams = [];
     const host = req.get('host');
     const protocol = req.protocol;
@@ -106,10 +205,8 @@ async function handleStreams(req, res, configStr) {
     for (const torrent of torrents) {
       const isCached = cachedHashes.has(torrent.infoHash.toLowerCase());
 
-      // If user has Debrid configured
       if (hasDebrid) {
         if (isCached) {
-          // Provide playback resolution link
           const playbackUrl = `${protocol}://${host}/playback/${encodeURIComponent(configStr)}/${torrent.infoHash}`;
           const formatted = formatStream({
             rawTitle: torrent.rawTitle,
@@ -129,7 +226,6 @@ async function handleStreams(req, res, configStr) {
             seeders: formatted.seeders
           });
         } else if (config.showP2PFallback) {
-          // Uncached torrent: offer as P2P fallback
           const formatted = formatStream({
             rawTitle: torrent.rawTitle,
             infoHash: torrent.infoHash,
@@ -147,7 +243,6 @@ async function handleStreams(req, res, configStr) {
           });
         }
       } else {
-        // Pure P2P stream
         const formatted = formatStream({
           rawTitle: torrent.rawTitle,
           infoHash: torrent.infoHash,
@@ -166,7 +261,6 @@ async function handleStreams(req, res, configStr) {
       }
     }
 
-    // 5. Group and limit by resolution
     const maxPerRes = config.maxStreamsPerResolution || 5;
     const grouped = {};
     const finalStreams = [];
@@ -190,7 +284,7 @@ async function handleStreams(req, res, configStr) {
 app.get('/stream/:type/:id.json', (req, res) => handleStreams(req, res, ''));
 app.get('/:config/stream/:type/:id.json', (req, res) => handleStreams(req, res, req.params.config));
 
-// 4. Playback resolver endpoint for Debrid streams
+// 6. Playback resolver endpoint for Debrid streams
 app.get('/playback/:config/:infoHash', async (req, res) => {
   const { config: configStr, infoHash } = req.params;
   const config = decodeConfig(configStr);
@@ -200,14 +294,10 @@ app.get('/playback/:config/:infoHash', async (req, res) => {
   }
 
   try {
-    console.log(`[Playback] Resolving stream for hash ${infoHash} with ${config.debridProvider}`);
     const streamUrl = await debrid.resolveStream(config.debridProvider, config.debridApiKey, infoHash);
-
     if (streamUrl) {
-      // 302 Redirect directly to CDN video URL
       return res.redirect(302, streamUrl);
     }
-
     res.status(404).send('Failed to generate direct debrid stream link.');
   } catch (err) {
     console.error(`[Playback Error]`, err.message);

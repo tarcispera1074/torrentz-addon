@@ -2,12 +2,13 @@ const { client } = require('../utils/http');
 const { extractInfoHash } = require('../utils/parser');
 
 /**
- * Scrape The Pirate Bay using the official Apibay API (plus fallback mirror)
+ * Scrape The Pirate Bay using the official Apibay API
  */
 async function searchThePirateBay(query) {
   const results = [];
   try {
-    const url = `https://apibay.org/q.php?q=${encodeURIComponent(query)}&cat=200`; // 200 = Video
+    // Omitting cat allows searching all video and media categories
+    const url = `https://apibay.org/q.php?q=${encodeURIComponent(query)}`;
     const res = await client.get(url, { timeout: 6000 });
 
     if (Array.isArray(res.data)) {

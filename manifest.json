@@ -4,16 +4,32 @@
   "name": "Torrentz",
   "description": "High-speed torrent scraper for ThePirateBay, 1337x, LimeTorrents, and RARBG with Debrid support",
   "resources": [
+    "catalog",
+    "meta",
     "stream"
   ],
   "types": [
     "movie",
-    "series"
+    "series",
+    "other"
   ],
   "idPrefixes": [
-    "tt"
+    "tt",
+    "torrentz:"
   ],
-  "catalogs": [],
+  "catalogs": [
+    {
+      "type": "other",
+      "id": "torrentz_search",
+      "name": "Torrentz Search",
+      "extra": [
+        {
+          "name": "search",
+          "isRequired": false
+        }
+      ]
+    }
+  ],
   "behaviorHints": {
     "configurable": true,
     "configurationRequired": false
