@@ -9,6 +9,7 @@ const { formatStream, formatSize } = require('./utils/parser');
 const cache = require('./utils/cache');
 
 const app = express();
+app.set('trust proxy', true);
 app.use(cors());
 
 // Manifest generator supporting split modes: 'movies', 'xxx', 'all'
@@ -330,7 +331,8 @@ async function handleStreams(req, res, configStr) {
 
     const formattedStreams = [];
     const host = req.get('host');
-    const protocol = req.protocol;
+    const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
+    const protocol = isLocal ? req.protocol : 'https';
 
     for (const torrent of torrents) {
       const isCached = cachedHashes.has(torrent.infoHash.toLowerCase());
