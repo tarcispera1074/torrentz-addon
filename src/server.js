@@ -90,9 +90,11 @@ function placeholderPosterSvg(title) {
 }
 
 function placeholderPosterUrl(req, title) {
-  const host = req.get('host') || 'localhost';
-  const protocol = host.includes('localhost') || host.includes('127.0.0.1') ? req.protocol : 'https';
-  return `${protocol}://${host}/poster/${encodeURIComponent(String(title || 'Torrentz').slice(0, 120))}.svg`;
+  // Nuvio clients commonly reject SVG/data-URI posters. Use a conventional
+  // PNG placeholder for unmatched adult releases; real source/Cinemeta posters
+  // are still preferred before this fallback.
+  const label = encodeURIComponent(String(title || 'Torrentz').slice(0, 70));
+  return `https://placehold.co/300x450/171923/f4f4f5.png?text=${label}`;
 }
 
 /**
