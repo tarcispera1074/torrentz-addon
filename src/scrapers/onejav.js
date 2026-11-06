@@ -1,2 +1,5 @@
-const { makeJavScraper } = require('./jav');
-module.exports = makeJavScraper('onejav', 'OneJAV', q => `https://onejav.com/search/${encodeURIComponent(q)}`);
+const { makeJavScraperWithFallback } = require('./jav');
+module.exports = makeJavScraperWithFallback('onejav', 'OneJAV', [
+  q => `https://onejav.com/search/${encodeURIComponent(q)}`,
+  q => `https://onejav.com/?s=${encodeURIComponent(q)}`
+]);

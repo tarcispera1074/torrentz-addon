@@ -1,2 +1,5 @@
-const { makeJavScraper } = require('./jav');
-module.exports = makeJavScraper('ijavtorrent', 'iJavTorrent', q => `https://ijavtorrent.com/search/${encodeURIComponent(q)}`);
+const { makeJavScraperWithFallback } = require('./jav');
+module.exports = makeJavScraperWithFallback('ijavtorrent', 'iJavTorrent', [
+  q => `https://ijavtorrent.com/search/${encodeURIComponent(q)}`,
+  q => `https://ijavtorrent.com/?s=${encodeURIComponent(q)}`
+]);
