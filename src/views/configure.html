@@ -387,6 +387,11 @@
       <button type="button" id="copyBtn" class="btn btn-secondary" onclick="copyManifestUrl()">Copy Manifest URL</button>
       <div id="installSuccessNotice">Copied to clipboard! Paste it into Nuvio's Addon URL bar.</div>
     </div>
+    <div class="input-group" style="margin-top: 1rem;">
+      <label for="manifestUrl">Manifest URL</label>
+      <input type="text" id="manifestUrl" readonly aria-label="Generated manifest URL">
+      <div class="helper-text">Copy this URL into Nuvio/Stremio if the install button does not open the app.</div>
+    </div>
   </div>
 
   <script>
@@ -500,6 +505,7 @@
       const stremioProtocolUrl = url.replace(/^https?:\/\//i, 'stremio://');
       const installBtn = document.getElementById('installBtn');
       installBtn.href = stremioProtocolUrl;
+      document.getElementById('manifestUrl').value = url;
     }
 
     function copyManifestUrl() {

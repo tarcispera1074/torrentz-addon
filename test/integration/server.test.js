@@ -79,6 +79,16 @@ test('serves the dynamic manifest with the shared version', async () => {
   assert.deepEqual(body.resources, ['catalog', 'meta', 'stream']);
 });
 
+test('configuration page exposes both provider actions and the manifest URL', async () => {
+  const response = await fetch(`${baseUrl}/configure`);
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(html, /Select all/);
+  assert.match(html, /Deselect all/);
+  assert.match(html, /id="manifestUrl"/);
+});
+
 test('groups same-title releases and orders them by quality', async () => {
   const { body } = await getJson('/stream/movie/tt1375666.json');
   const { streams } = body;
