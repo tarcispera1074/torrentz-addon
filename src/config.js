@@ -5,7 +5,7 @@ const { normalizeResolution, SUPPORTED_RESOLUTIONS } = require('./utils/parser')
  */
 const DEFAULT_CONFIG = {
   mode: 'all', // 'movies', 'xxx', 'all'
-  providers: ['tpb', '1337x', 'limetorrents', 'rargb', 'torlock', 'pussytorrents', 'yourbittorrent2', 'bootytape', 'mypornclub', 'lovetorrent', 'xxxclub', 'pornrips', 'sukebei', 'tokyotosho', 'onejav', '141jav', '141ppv', 'javjunkies', 'javbee', 'ijavtorrent', 'myjavbay', 'avfan', 'ffjav', 'projectjav', 'vrjav'],
+  providers: ['tpb', '1337x', 'limetorrents', 'rargb'],
   debridProvider: null, // 'realdebrid', 'alldebrid', 'premiumize', 'torbox', 'debridlink' or null
   debridApiKey: '',
   showP2PFallback: true,
