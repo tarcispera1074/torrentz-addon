@@ -35,7 +35,7 @@ test('all eight general and mixed providers are registered', () => {
 
 test('JAV providers are registered', () => {
   const { SCRAPERS } = require('../../src/scrapers');
-  for (const provider of ['sukebei', 'tokyotosho', 'onejav', '141jav', '141ppv', 'javjunkies', 'javbee', 'ijavtorrent', 'myjavbay', 'avfan', 'ffjav', 'projectjav', 'vrjav']) {
+  for (const provider of ['sukebei', 'tokyotosho', 'ffjav']) {
     assert.equal(typeof SCRAPERS[provider].search, 'function', provider);
   }
 });

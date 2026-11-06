@@ -33,17 +33,8 @@ const PROVIDER_ALIASES = {
   sukebei: 'sukebei',
   'sukebei-nyaa': 'sukebei',
   tokyotosho: 'tokyotosho',
-  onejav: 'onejav',
-  '141jav': '141jav',
-  '141ppv': '141ppv',
-  javjunkies: 'javjunkies',
-  javbee: 'javbee',
-  ijavtorrent: 'ijavtorrent',
-  myjavbay: 'myjavbay',
-  avfan: 'avfan',
   ffjav: 'ffjav',
-  projectjav: 'projectjav',
-  vrjav: 'vrjav'
+  'ff-jav': 'ffjav'
 };
 
 const DEBRID_PROVIDERS = new Set([

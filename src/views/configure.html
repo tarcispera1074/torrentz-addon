@@ -288,17 +288,7 @@
         <label class="checkbox-label"><input type="checkbox" id="provider-pornrips" value="pornrips"><span>PornRips</span></label>
         <label class="checkbox-label"><input type="checkbox" id="provider-sukebei" value="sukebei"><span>Sukebei Nyaa</span></label>
         <label class="checkbox-label"><input type="checkbox" id="provider-tokyotosho" value="tokyotosho"><span>Tokyo Toshokan</span></label>
-        <label class="checkbox-label"><input type="checkbox" id="provider-onejav" value="onejav"><span>OneJAV</span></label>
-        <label class="checkbox-label"><input type="checkbox" id="provider-141jav" value="141jav"><span>141JAV</span></label>
-        <label class="checkbox-label"><input type="checkbox" id="provider-141ppv" value="141ppv"><span>141PPV</span></label>
-        <label class="checkbox-label"><input type="checkbox" id="provider-javjunkies" value="javjunkies"><span>JAVJunkies</span></label>
-        <label class="checkbox-label"><input type="checkbox" id="provider-javbee" value="javbee"><span>JAVBEE</span></label>
-        <label class="checkbox-label"><input type="checkbox" id="provider-ijavtorrent" value="ijavtorrent"><span>iJavTorrent</span></label>
-        <label class="checkbox-label"><input type="checkbox" id="provider-myjavbay" value="myjavbay"><span>My JAV Bay</span></label>
-        <label class="checkbox-label"><input type="checkbox" id="provider-avfan" value="avfan"><span>AVFan</span></label>
         <label class="checkbox-label"><input type="checkbox" id="provider-ffjav" value="ffjav"><span>FFJAV</span></label>
-        <label class="checkbox-label"><input type="checkbox" id="provider-projectjav" value="projectjav"><span>Project JAV</span></label>
-        <label class="checkbox-label"><input type="checkbox" id="provider-vrjav" value="vrjav"><span>VRJAV</span></label>
       </div>
     </div>
 
@@ -432,7 +422,7 @@
 
     function buildConfigObject() {
       const providers = [];
-      ['tpb', '1337x', 'limetorrents', 'rargb', 'torlock', 'pussytorrents', 'yourbittorrent2', 'bootytape', 'mypornclub', 'lovetorrent', 'xxxclub', 'pornrips', 'sukebei', 'tokyotosho', 'onejav', '141jav', '141ppv', 'javjunkies', 'javbee', 'ijavtorrent', 'myjavbay', 'avfan', 'ffjav', 'projectjav', 'vrjav'].forEach(p => {
+      ['tpb', '1337x', 'limetorrents', 'rargb', 'torlock', 'pussytorrents', 'yourbittorrent2', 'bootytape', 'mypornclub', 'lovetorrent', 'xxxclub', 'pornrips', 'sukebei', 'tokyotosho', 'ffjav'].forEach(p => {
         if (document.getElementById(`provider-${p}`).checked) {
           providers.push(p);
         }
