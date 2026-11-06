@@ -68,9 +68,10 @@ function escapeXml(value) {
 
 /**
  * Deterministic, dependency-free poster used when Cinemeta has no match.
- * A base64 SVG data URI keeps the fallback local (no external image host).
+ * The SVG is served over HTTP because some Stremio/Nuvio clients do not render
+ * data-image URIs in catalog posters.
  */
-function placeholderPoster(title) {
+function placeholderPosterSvg(title) {
   const text = String(title || 'Torrentz').slice(0, 42);
   let hue = 0;
   for (const ch of text) hue = (hue + ch.charCodeAt(0)) % 360;
@@ -85,13 +86,19 @@ function placeholderPoster(title) {
     `<text x="150" y="228" fill="#e7e4ff" font-family="sans-serif" font-size="20" font-weight="600" text-anchor="middle">${escapeXml(text)}</text>` +
     `</svg>`;
 
-  return `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`;
+  return svg;
+}
+
+function placeholderPosterUrl(req, title) {
+  const host = req.get('host') || 'localhost';
+  const protocol = host.includes('localhost') || host.includes('127.0.0.1') ? req.protocol : 'https';
+  return `${protocol}://${host}/poster/${encodeURIComponent(String(title || 'Torrentz').slice(0, 120))}.svg`;
 }
 
 /**
  * Enrich scraped torrents with real Cinemeta posters when a title matches.
  */
-async function buildCatalogMetas(torrents, type, searchQuery) {
+async function buildCatalogMetas(torrents, type, searchQuery, req) {
   let catalog = [];
   if (type === 'movie' || type === 'series') {
     catalog = await searchCatalog(type, searchQuery);
@@ -117,7 +124,7 @@ async function buildCatalogMetas(torrents, type, searchQuery) {
       id: `torrentz:${torrent.infoHash}`,
       type: type || 'movie',
       name: info.label || torrent.rawTitle,
-      poster: hit?.poster || placeholderPoster(info.label || torrent.rawTitle),
+      poster: hit?.poster || torrent.poster || placeholderPosterUrl(req, info.label || torrent.rawTitle),
       posterShape: 'poster',
       description: `👤 ${torrent.seeders} seeders | 💾 ${formatSize(torrent.sizeBytes)} | ⚙️ ${torrent.source}`
     };
@@ -255,6 +262,9 @@ app.get('/debug-search', async (req, res) => {
 });
 
 app.get('/', (req, res) => res.redirect('/configure'));
+app.get('/poster/:title.svg', (req, res) => {
+  res.type('image/svg+xml').set('Cache-Control', 'public, max-age=86400').send(placeholderPosterSvg(req.params.title));
+});
 app.get('/configure', (req, res) => {
   res.sendFile(path.join(__dirname, 'views', 'configure.html'));
 });
@@ -292,7 +302,7 @@ async function handleCatalog(req, res, configStr) {
   console.log(`[Catalog Search] Querying torrents for: "${searchQuery}" (${type})`);
   try {
     const torrents = await scrapers.searchAll(searchQuery, config.providers);
-    const metas = await buildCatalogMetas(torrents.slice(0, 50), type, searchQuery);
+    const metas = await buildCatalogMetas(torrents.slice(0, 50), type, searchQuery, req);
     res.json({ metas });
   } catch (err) {
     console.error('[Catalog Error]', err.message);
@@ -324,7 +334,7 @@ async function handleMeta(req, res, configStr) {
         id,
         type: type || 'movie',
         name,
-        poster: placeholderPoster(name),
+        poster: placeholderPosterUrl(req, name),
         posterShape: 'poster',
         description
       }

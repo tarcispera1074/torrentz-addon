@@ -188,7 +188,11 @@ test('catalog uses real Cinemeta posters and an SVG fallback', async () => {
     assert.equal(body.metas[0].background, 'https://img.example/inception-bg.jpg');
     assert.equal(body.metas[0].releaseInfo, '2010');
 
-    assert.ok(body.metas[1].poster.startsWith('data:image/svg+xml;base64,'));
+    assert.match(body.metas[1].poster, /\/poster\/.*\.svg$/);
+
+    const poster = await fetch(`${baseUrl}${new URL(body.metas[1].poster).pathname}`);
+    assert.equal(poster.status, 200);
+    assert.match(poster.headers.get('content-type') || '', /image\/svg\+xml/);
   } finally {
     scrapers.searchAll = original;
   }

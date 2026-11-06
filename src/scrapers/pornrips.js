@@ -11,6 +11,7 @@ async function search(query) {
     const items = response.data.split(/<item>/i).slice(1);
     for (const item of items) {
       const title = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/i) || item.match(/<title>(.*?)<\/title>/i) || [])[1];
+      const poster = (item.match(/<img[^>]+src=["']([^"']+)["']/i) || [])[1] || null;
       const links = [...item.matchAll(/https?:\/\/[^\s<>"']+\.torrent/gi)];
       for (const match of links) {
         let infoHash = null;
@@ -27,7 +28,8 @@ async function search(query) {
           infoHash,
           sizeBytes: sizeText ? parseSizeToBytes(sizeText[1]) : 0,
           seeders: 0,
-          source: 'PornRips'
+          source: 'PornRips',
+          poster
         });
       }
     }
