@@ -1,6 +1,9 @@
-const axios = require('axios');
+const { client } = require('../utils/http');
+const { pollUntil, debridPollOptions } = require('../utils/poll');
+const { DebridPendingError, DebridError } = require('./errors');
 
 const API_BASE = 'https://www.premiumize.me/api';
+const VIDEO_EXT = /\.(mp4|mkv|avi|mov|wmv|m4v|webm|flv)$/i;
 
 async function checkCache(apiKey, infoHashes) {
   if (!apiKey || !infoHashes || infoHashes.length === 0) return new Set();
@@ -15,7 +18,7 @@ async function checkCache(apiKey, infoHashes) {
       params.append('apikey', apiKey);
       chunk.forEach(h => params.append('items[]', h));
 
-      const res = await axios.get(`${API_BASE}/cache/check?${params.toString()}`, { timeout: 5000 });
+      const res = await client.get(`${API_BASE}/cache/check?${params.toString()}`, { timeout: 5000 });
       if (res.data?.status === 'success' && Array.isArray(res.data?.response)) {
         res.data.response.forEach((isCached, idx) => {
           if (isCached && chunk[idx]) {
@@ -31,28 +34,50 @@ async function checkCache(apiKey, infoHashes) {
   return cachedHashes;
 }
 
-async function resolveStream(apiKey, infoHash) {
-  const magnet = `magnet:?xt=urn:btih:${infoHash}`;
-  
-  // Use direct download if available
-  const res = await axios.post(`${API_BASE}/transfer/directdl`, new URLSearchParams({
-    apikey: apiKey,
-    src: magnet
-  }).toString(), {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    timeout: 8000
-  });
-
-  const content = res.data?.content || [];
-  const videoFiles = content
-    .filter(f => /\.(mp4|mkv|avi|mov|wmv)$/i.test(f.path || ''))
+function pickVideo(content) {
+  const videoFiles = (content || [])
+    .filter(f => VIDEO_EXT.test(f.path || f.name || ''))
     .sort((a, b) => (b.size || 0) - (a.size || 0));
+  return videoFiles[0] || null;
+}
 
-  if (videoFiles.length > 0 && videoFiles[0].link) {
-    return videoFiles[0].link;
-  }
+async function resolveStream(apiKey, infoHash) {
+  const magnet = `magnet:?xt=urn:btih:${String(infoHash).toLowerCase()}`;
 
-  throw new Error('Premiumize: No direct video stream found');
+  // directdl only succeeds for cached content. Poll for the duration of the
+  // wait budget so a torrent that is finishing caching can still resolve.
+  const result = await pollUntil(async () => {
+    try {
+      const res = await client.post(
+        `${API_BASE}/transfer/directdl`,
+        new URLSearchParams({ apikey: apiKey, src: magnet }).toString(),
+        {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          timeout: 8000
+        }
+      );
+
+      if (res.data?.status === 'success') {
+        const file = pickVideo(res.data.content);
+        if (file?.link) return file.link;
+        if (Array.isArray(res.data.content) && res.data.content[0]?.link) {
+          return res.data.content[0].link;
+        }
+      }
+
+      const message = String(res.data?.message || '');
+      if (/invalid (api ?key|token)|authentication|not premium|account/i.test(message)) {
+        throw new DebridError('Premiumize', message || 'request rejected');
+      }
+      return null;
+    } catch (err) {
+      if (err.name === 'DebridError') throw err;
+      return null;
+    }
+  }, debridPollOptions());
+
+  if (!result) throw new DebridPendingError('Premiumize', 5);
+  return result;
 }
 
 module.exports = {

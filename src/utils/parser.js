@@ -8,6 +8,45 @@ const DEFAULT_TRACKERS = [
   'udp://explodie.org:6969/announce'
 ];
 
+const RESOLUTION_ALIASES = {
+  '4k': '2160p',
+  '2160': '2160p',
+  '2160p': '2160p',
+  uhd: '2160p',
+  '1080': '1080p',
+  '1080p': '1080p',
+  '720': '720p',
+  '720p': '720p',
+  '480': '480p',
+  '480p': '480p',
+  '360': '360p',
+  '360p': '360p',
+  '240': '240p',
+  '240p': '240p'
+};
+
+const RESOLUTION_LABELS = {
+  '2160p': '4K',
+  '1080p': '1080p',
+  '720p': '720p',
+  '480p': '480p',
+  '360p': '360p',
+  '240p': '240p',
+  other: 'HD'
+};
+
+const RESOLUTION_RANK = {
+  '2160p': 6,
+  '1080p': 5,
+  '720p': 4,
+  '480p': 3,
+  '360p': 2,
+  '240p': 1,
+  other: 0
+};
+
+const SUPPORTED_RESOLUTIONS = ['2160p', '1080p', '720p', '480p', '360p', '240p'];
+
 /**
  * Format bytes to human readable format (GB / MB)
  */
@@ -29,7 +68,7 @@ function formatSize(bytes) {
 function parseSizeToBytes(str) {
   if (!str) return 0;
   if (typeof str === 'number') return str;
-  const match = str.match(/([\d.]+)\s*([GMK]i?B|bytes)/i);
+  const match = String(str).match(/([\d.]+)\s*([GMK]i?B|bytes)/i);
   if (!match) return 0;
   const val = parseFloat(match[1]);
   const unit = match[2].toUpperCase();
@@ -76,11 +115,98 @@ function base32ToHex(base32) {
 }
 
 /**
- * Format a torrent for Stremio stream output
+ * Canonical resolution key used for filtering, ranking and UI labels.
  */
-function formatStream({ rawTitle, infoHash, sizeBytes, seeders, source, debridCached = null, debridProvider = null }) {
+function normalizeResolution(resolution) {
+  if (!resolution) return 'other';
+  const key = String(resolution).toLowerCase().replace(/\s+/g, '');
+  return RESOLUTION_ALIASES[key] || key;
+}
+
+function resolutionLabel(resolution) {
+  const normalized = normalizeResolution(resolution);
+  return RESOLUTION_LABELS[normalized] || normalized.toUpperCase();
+}
+
+function resolutionRank(resolution) {
+  return RESOLUTION_RANK[normalizeResolution(resolution)] ?? 0;
+}
+
+function normalizeTitle(title) {
+  return String(title || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function pad2(value) {
+  return String(value).padStart(2, '0');
+}
+
+/**
+ * Parse a torrent release name into a canonical display title and grouping key.
+ * Releases of the same movie/episode that only differ by quality, codec or
+ * source share the same `key`, which is what the server uses to keep them
+ * adjacent in the stream list.
+ */
+function getTitleInfo(rawTitle) {
   const parsed = ptn.parse(rawTitle || '');
-  const resolution = parsed.resolution || 'HD';
+
+  const title = (parsed.title || '').trim() || String(rawTitle || '').trim();
+  const year = parsed.year ? String(parsed.year) : null;
+  const season = Number.isFinite(Number(parsed.season)) && parsed.season !== undefined
+    ? Number(parsed.season)
+    : null;
+  const episode = Number.isFinite(Number(parsed.episode)) && parsed.episode !== undefined
+    ? Number(parsed.episode)
+    : null;
+
+  let label = title;
+  if (year) label += ` (${year})`;
+  if (season !== null && episode !== null) {
+    label += ` S${pad2(season)}E${pad2(episode)}`;
+  }
+
+  const key = [
+    normalizeTitle(title),
+    year || '',
+    season === null ? '' : season,
+    episode === null ? '' : episode
+  ].join('|');
+
+  return {
+    parsed,
+    title,
+    year,
+    season,
+    episode,
+    label,
+    key
+  };
+}
+
+/**
+ * Format a torrent for Stremio stream output.
+ *
+ * `displayTitle` is the canonical title shown on the first line. Keeping it
+ * identical for every quality variant makes the variants read as one title
+ * with multiple options in the Stremio/Nuvio stream list.
+ */
+function formatStream({
+  rawTitle,
+  infoHash,
+  sizeBytes,
+  seeders,
+  source,
+  debridCached = null,
+  debridProvider = null,
+  displayTitle = null,
+  titleInfo = null
+}) {
+  const info = titleInfo || getTitleInfo(rawTitle);
+  const parsed = info.parsed || {};
+
+  const resolution = normalizeResolution(parsed.resolution);
   const codec = parsed.codec || '';
   const audio = parsed.audio || '';
 
@@ -91,7 +217,7 @@ function formatStream({ rawTitle, infoHash, sizeBytes, seeders, source, debridCa
     badge = `[P2P]`;
   }
 
-  const streamName = `${badge} ${resolution.toUpperCase()}`;
+  const streamName = `${badge} ${resolutionLabel(resolution)}`;
 
   const metaTags = [];
   if (seeders !== undefined && seeders !== null) metaTags.push(`👤 ${seeders}`);
@@ -100,23 +226,37 @@ function formatStream({ rawTitle, infoHash, sizeBytes, seeders, source, debridCa
   if (codec) metaTags.push(codec);
   if (audio) metaTags.push(audio);
 
-  const streamTitle = `${rawTitle}\n${metaTags.join(' | ')}`;
+  const heading = displayTitle || info.label || rawTitle || '';
+  const titleLines = [heading];
+  if (rawTitle && normalizeTitle(rawTitle) !== normalizeTitle(heading)) {
+    titleLines.push(rawTitle);
+  }
+  if (metaTags.length > 0) {
+    titleLines.push(metaTags.join(' | '));
+  }
+
+  const streamTitle = titleLines.filter(Boolean).join('\n');
+  const normalizedHash = String(infoHash || '').toLowerCase();
 
   const sources = [
-    `dht:${infoHash.toLowerCase()}`,
+    `dht:${normalizedHash}`,
     ...DEFAULT_TRACKERS.map(tr => `tracker:${tr}`)
   ];
 
   return {
     name: streamName,
     title: streamTitle,
-    infoHash: infoHash.toLowerCase(),
+    infoHash: normalizedHash,
     sources,
     resolution,
-    seeders: parseInt(seeders) || 0,
+    resolutionRank: resolutionRank(resolution),
+    seeders: parseInt(seeders, 10) || 0,
     sizeBytes: sizeBytes || 0,
     source,
-    rawTitle
+    rawTitle,
+    displayTitle: heading,
+    groupKey: info.key,
+    debridCached: Boolean(debridCached)
   };
 }
 
@@ -125,5 +265,13 @@ module.exports = {
   parseSizeToBytes,
   extractInfoHash,
   formatStream,
+  getTitleInfo,
+  normalizeResolution,
+  normalizeTitle,
+  resolutionLabel,
+  resolutionRank,
+  SUPPORTED_RESOLUTIONS,
+  RESOLUTION_LABELS,
+  RESOLUTION_RANK,
   DEFAULT_TRACKERS
 };

@@ -2,98 +2,187 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const { decodeConfig, DEFAULT_CONFIG } = require('./config');
-const { getMetadata } = require('./metadata/cinemeta');
-const { searchAll } = require('./scrapers');
+const { getMetadata, searchCatalog, normalizeTitle } = require('./metadata/cinemeta');
+const scrapers = require('./scrapers');
 const debrid = require('./debrid');
-const { formatStream, formatSize } = require('./utils/parser');
+const {
+  formatStream,
+  formatSize,
+  getTitleInfo,
+  normalizeResolution
+} = require('./utils/parser');
+const { streamsCacheKey, debridFlagsCacheKey } = require('./utils/cacheKeys');
+const { createManifest } = require('./manifest');
 const cache = require('./utils/cache');
 
 const app = express();
 app.set('trust proxy', true);
 app.use(cors());
 
-// Manifest generator supporting split modes: 'movies', 'xxx', 'all'
-function createManifest(config = DEFAULT_CONFIG) {
-  const mode = config.mode || 'all';
-  let id = 'community.torrentz.addon';
-  let name = 'Torrentz';
-  let description = 'High-speed torrent scraper for ThePirateBay, 1337x, LimeTorrents, and RARBG';
-  let types = ['movie', 'series', 'other'];
-  let catalogs = [];
+const CATALOG_TORRENT_TTL = 24 * 60 * 60 * 1000;
+const STREAM_TTL = 15 * 60 * 1000;
+const DEBRID_FLAGS_TTL = 10 * 60 * 1000;
 
-  if (mode === 'movies') {
-    id = 'community.torrentz.movies';
-    name = 'Torrentz (Movies & TV)';
-    description = 'Mainstream Movies & TV Series torrent streams with Debrid support';
-    types = ['movie', 'series'];
-    catalogs = [
-      {
-        type: 'movie',
-        id: 'torrentz_movies',
-        name: 'Torrentz Movies',
-        extra: [{ name: 'search', isRequired: false }]
-      },
-      {
-        type: 'series',
-        id: 'torrentz_series',
-        name: 'Torrentz Series',
-        extra: [{ name: 'search', isRequired: false }]
-      }
-    ];
-  } else if (mode === 'xxx' || mode === 'other') {
-    id = 'community.torrentz.xxx';
-    name = 'Torrentz XXX';
-    description = 'Adult video & performer torrent scraper';
-    types = ['movie'];
-    catalogs = [
-      {
-        type: 'movie',
-        id: 'torrentz_xxx',
-        name: 'Torrentz XXX',
-        extra: [{ name: 'search', isRequired: false }]
-      }
-    ];
-  } else {
-    // Mode = 'all'
-    id = 'community.torrentz.addon';
-    name = 'Torrentz (All-in-One)';
-    description = 'Movies, TV series, adult performers & custom torrents';
-    types = ['movie', 'series'];
-    catalogs = [
-      {
-        type: 'movie',
-        id: 'torrentz_movies',
-        name: 'Torrentz Movies',
-        extra: [{ name: 'search', isRequired: false }]
-      },
-      {
-        type: 'series',
-        id: 'torrentz_series',
-        name: 'Torrentz Series',
-        extra: [{ name: 'search', isRequired: false }]
-      }
-    ];
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+/**
+ * Parse catalog "extra" from the raw path segment.
+ *
+ * Express has already decoded `req.params.extra`, which makes titles containing
+ * `&` ambiguous. Parsing the raw (still percent-encoded) last path segment with
+ * URLSearchParams preserves the distinction and avoids double-decoding.
+ */
+function parseCatalogExtra(req, extra) {
+  const pathOnly = (req.originalUrl || '').split('?')[0];
+  const segments = pathOnly.split('/').filter(Boolean);
+  const rawSegment = (segments[segments.length - 1] || '').replace(/\.json$/i, '');
+  const source = rawSegment.includes('=') ? rawSegment : (extra || '');
+
+  if (!source) return {};
+  try {
+    return Object.fromEntries(new URLSearchParams(source));
+  } catch (err) {
+    return {};
+  }
+}
+
+function extractYear(value) {
+  const match = String(value || '').match(/\b(19|20)\d{2}\b/);
+  return match ? match[0] : '';
+}
+
+function posterKey(name, year) {
+  return `${normalizeTitle(name)}|${extractYear(year)}`;
+}
+
+function escapeXml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * Deterministic, dependency-free poster used when Cinemeta has no match.
+ * A base64 SVG data URI keeps the fallback local (no external image host).
+ */
+function placeholderPoster(title) {
+  const text = String(title || 'Torrentz').slice(0, 42);
+  let hue = 0;
+  for (const ch of text) hue = (hue + ch.charCodeAt(0)) % 360;
+
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="450" viewBox="0 0 300 450">` +
+    `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">` +
+    `<stop offset="0" stop-color="hsl(${hue},35%,14%)"/>` +
+    `<stop offset="1" stop-color="hsl(${(hue + 40) % 360},45%,24%)"/>` +
+    `</linearGradient></defs>` +
+    `<rect width="300" height="450" fill="url(#g)"/>` +
+    `<text x="150" y="228" fill="#e7e4ff" font-family="sans-serif" font-size="20" font-weight="600" text-anchor="middle">${escapeXml(text)}</text>` +
+    `</svg>`;
+
+  return `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`;
+}
+
+/**
+ * Enrich scraped torrents with real Cinemeta posters when a title matches.
+ */
+async function buildCatalogMetas(torrents, type, searchQuery) {
+  let catalog = [];
+  if (type === 'movie' || type === 'series') {
+    catalog = await searchCatalog(type, searchQuery);
   }
 
-  if (config.debridProvider) {
-    const prov = debrid.getProvider(config.debridProvider);
-    name += ` [${prov ? prov.name : config.debridProvider.toUpperCase()}]`;
+  const byKey = new Map();
+  for (const meta of catalog) {
+    if (!meta || !meta.name) continue;
+    const withYear = posterKey(meta.name, meta.releaseInfo || meta.year);
+    const withoutYear = posterKey(meta.name, '');
+    if (!byKey.has(withYear)) byKey.set(withYear, meta);
+    if (!byKey.has(withoutYear)) byKey.set(withoutYear, meta);
   }
 
-  return {
-    id,
-    version: '1.0.2',
-    name,
-    description,
-    resources: ['catalog', 'meta', 'stream'],
-    types,
-    idPrefixes: ['tt', 'torrentz:'],
-    catalogs,
-    behaviorHints: {
-      configurable: true,
-      configurationRequired: false
+  return torrents.map(torrent => {
+    const info = getTitleInfo(torrent.rawTitle);
+    const hit = byKey.get(posterKey(info.title, info.year)) || byKey.get(posterKey(info.title, ''));
+
+    // Store into cache for meta and stream lookup
+    cache.set(`torrent:${torrent.infoHash}`, torrent, CATALOG_TORRENT_TTL);
+
+    const meta = {
+      id: `torrentz:${torrent.infoHash}`,
+      type: type || 'movie',
+      name: info.label || torrent.rawTitle,
+      poster: hit?.poster || placeholderPoster(info.label || torrent.rawTitle),
+      posterShape: 'poster',
+      description: `👤 ${torrent.seeders} seeders | 💾 ${formatSize(torrent.sizeBytes)} | ⚙️ ${torrent.source}`
+    };
+
+    if (hit?.background) meta.background = hit.background;
+    if (info.year) meta.releaseInfo = info.year;
+
+    return meta;
+  });
+}
+
+function compareStreams(a, b) {
+  if (a.debridCached !== b.debridCached) return a.debridCached ? -1 : 1;
+  if (a.resolutionRank !== b.resolutionRank) return b.resolutionRank - a.resolutionRank;
+  return b.seeders - a.seeders;
+}
+
+/**
+ * Keep releases of the same movie/episode adjacent, ordered from best group
+ * (highest seeders) to worst. Inside a group, cached Debrid streams come first,
+ * then highest resolution, then seeders. This is the closest Stremio/Nuvio
+ * allows to nested "same title, different quality" options.
+ */
+function orderStreams(streams, groupByTitle) {
+  if (!groupByTitle) {
+    return [...streams].sort((a, b) => b.seeders - a.seeders);
+  }
+
+  const groups = new Map();
+
+  for (const stream of streams) {
+    const key = stream.groupKey || stream.infoHash;
+    let group = groups.get(key);
+    if (!group) {
+      group = { key, bestSeeders: 0, streams: [] };
+      groups.set(key, group);
     }
+    group.bestSeeders = Math.max(group.bestSeeders, stream.seeders || 0);
+    group.streams.push(stream);
+  }
+
+  return [...groups.values()]
+    .sort((a, b) => b.bestSeeders - a.bestSeeders || a.key.localeCompare(b.key))
+    .flatMap(group => group.streams.sort(compareStreams));
+}
+
+function toStremioStream(stream) {
+  const out = {
+    name: stream.name,
+    title: stream.title
   };
+
+  if (stream.url) {
+    out.url = stream.url;
+  } else {
+    out.infoHash = stream.infoHash;
+    out.sources = stream.sources;
+  }
+
+  const hints = {};
+  if (stream.rawTitle) hints.filename = stream.rawTitle;
+  if (stream.sizeBytes > 0) hints.videoSize = stream.sizeBytes;
+  if (Object.keys(hints).length > 0) out.behaviorHints = hints;
+
+  return out;
 }
 
 // 1. Health check, debug & configuration UI
@@ -187,14 +276,10 @@ app.get('/:config/manifest.json', (req, res) => {
 async function handleCatalog(req, res, configStr) {
   const { type, id, extra } = req.params;
   const config = decodeConfig(configStr);
+  const parsedExtra = parseCatalogExtra(req, extra);
 
-  let searchQuery = req.query.search || '';
-  if (!searchQuery && extra) {
-    const match = extra.match(/search=([^&]+)/);
-    if (match) {
-      searchQuery = decodeURIComponent(match[1]);
-    }
-  }
+  let searchQuery = req.query.search || parsedExtra.search || '';
+  searchQuery = String(searchQuery || '').trim();
 
   if (!searchQuery) {
     if (id === 'torrentz_xxx') {
@@ -206,21 +291,8 @@ async function handleCatalog(req, res, configStr) {
 
   console.log(`[Catalog Search] Querying torrents for: "${searchQuery}" (${type})`);
   try {
-    const torrents = await searchAll(searchQuery, config.providers);
-    const metas = torrents.slice(0, 50).map(t => {
-      // Store into cache for meta and stream lookup
-      cache.set(`torrent:${t.infoHash}`, t, 24 * 60 * 60 * 1000);
-
-      return {
-        id: `torrentz:${t.infoHash}`,
-        type: type || 'movie',
-        name: t.rawTitle,
-        poster: 'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=400&auto=format&fit=crop&q=60',
-        posterShape: 'poster',
-        description: `👤 ${t.seeders} seeders | 💾 ${formatSize(t.sizeBytes)} | ⚙️ ${t.source}`
-      };
-    });
-
+    const torrents = await scrapers.searchAll(searchQuery, config.providers);
+    const metas = await buildCatalogMetas(torrents.slice(0, 50), type, searchQuery);
     res.json({ metas });
   } catch (err) {
     console.error('[Catalog Error]', err.message);
@@ -240,9 +312,10 @@ async function handleMeta(req, res, configStr) {
   if (id.startsWith('torrentz:')) {
     const infoHash = id.replace('torrentz:', '').toLowerCase();
     const cached = cache.get(`torrent:${infoHash}`);
+    const info = cached ? getTitleInfo(cached.rawTitle) : null;
 
-    const name = cached ? cached.rawTitle : `Torrent ${infoHash.substring(0, 8)}`;
-    const description = cached 
+    const name = cached ? (info?.label || cached.rawTitle) : `Torrent ${infoHash.substring(0, 8)}`;
+    const description = cached
       ? `👤 ${cached.seeders} seeders | 💾 ${formatSize(cached.sizeBytes)} | ⚙️ ${cached.source}`
       : `InfoHash: ${infoHash}`;
 
@@ -251,7 +324,7 @@ async function handleMeta(req, res, configStr) {
         id,
         type: type || 'movie',
         name,
-        poster: 'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=400&auto=format&fit=crop&q=60',
+        poster: placeholderPoster(name),
         posterShape: 'poster',
         description
       }
@@ -283,7 +356,7 @@ async function handleStreams(req, res, configStr) {
         seeders: cached ? cached.seeders : 1,
         source: cached ? cached.source : 'Indexer'
       }];
-    } 
+    }
     // Case B: Stream requested from IMDb/Cinemeta item (tt...)
     else {
       const meta = await getMetadata(type, id);
@@ -295,12 +368,12 @@ async function handleStreams(req, res, configStr) {
       const searchQuery = meta.searchQuery;
       console.log(`[Stream] Querying indexers for: "${searchQuery}" (${type})`);
 
-      const cacheKey = `streams:${searchQuery}`;
+      const cacheKey = streamsCacheKey(type, searchQuery, config.providers);
       torrents = cache.get(cacheKey);
 
       if (!torrents) {
-        torrents = await searchAll(searchQuery, config.providers);
-        cache.set(cacheKey, torrents, 15 * 60 * 1000);
+        torrents = await scrapers.searchAll(searchQuery, config.providers);
+        cache.set(cacheKey, torrents, STREAM_TTL);
       }
     }
 
@@ -308,92 +381,79 @@ async function handleStreams(req, res, configStr) {
       return res.json({ streams: [] });
     }
 
-    // Debrid check
+    // Debrid check (memoized per provider + hash set)
     let cachedHashes = new Set();
     const hasDebrid = Boolean(config.debridProvider && config.debridApiKey);
 
     if (hasDebrid) {
-      const hashes = torrents.map(t => t.infoHash);
-      cachedHashes = await debrid.checkCache(config.debridProvider, config.debridApiKey, hashes);
+      const hashes = [...new Set(torrents.map(t => String(t.infoHash).toLowerCase()))];
+      const flagKey = debridFlagsCacheKey(config.debridProvider, hashes);
+
+      cachedHashes = cache.get(flagKey);
+      if (!cachedHashes) {
+        cachedHashes = await debrid.checkCache(config.debridProvider, config.debridApiKey, hashes);
+        cache.set(flagKey, cachedHashes, DEBRID_FLAGS_TTL);
+      }
     }
 
     const formattedStreams = [];
-    const host = req.get('host');
+    const host = req.get('host') || 'localhost';
     const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
     const protocol = isLocal ? req.protocol : 'https';
 
+    // Only filter known resolutions; leave unparsed releases in place so an
+    // unusually named release is not silently dropped.
+    const allowedResolutions = new Set(
+      (config.resolutions || DEFAULT_CONFIG.resolutions).map(normalizeResolution)
+    );
+    allowedResolutions.add('other');
+
     for (const torrent of torrents) {
-      const isCached = cachedHashes.has(torrent.infoHash.toLowerCase());
+      const titleInfo = getTitleInfo(torrent.rawTitle);
+      const resolution = normalizeResolution(titleInfo.parsed.resolution);
+
+      if (!allowedResolutions.has(resolution)) continue;
+
+      const base = {
+        rawTitle: torrent.rawTitle,
+        infoHash: torrent.infoHash,
+        sizeBytes: torrent.sizeBytes,
+        seeders: torrent.seeders,
+        source: torrent.source,
+        displayTitle: titleInfo.label,
+        titleInfo
+      };
+
+      const isCached = cachedHashes.has(String(torrent.infoHash).toLowerCase());
 
       if (hasDebrid) {
         if (isCached) {
-          const playbackUrl = `${protocol}://${host}/playback/${encodeURIComponent(configStr)}/${torrent.infoHash}`;
           const formatted = formatStream({
-            rawTitle: torrent.rawTitle,
-            infoHash: torrent.infoHash,
-            sizeBytes: torrent.sizeBytes,
-            seeders: torrent.seeders,
-            source: torrent.source,
+            ...base,
             debridCached: true,
             debridProvider: config.debridProvider.toUpperCase()
           });
-
-          formattedStreams.push({
-            name: formatted.name,
-            title: formatted.title,
-            url: playbackUrl,
-            resolution: formatted.resolution,
-            seeders: formatted.seeders
-          });
+          formatted.url = `${protocol}://${host}/playback/${encodeURIComponent(configStr)}/${torrent.infoHash}`;
+          formattedStreams.push(formatted);
         } else if (config.showP2PFallback) {
-          const formatted = formatStream({
-            rawTitle: torrent.rawTitle,
-            infoHash: torrent.infoHash,
-            sizeBytes: torrent.sizeBytes,
-            seeders: torrent.seeders,
-            source: torrent.source
-          });
-
-          formattedStreams.push({
-            name: formatted.name,
-            title: formatted.title,
-            infoHash: formatted.infoHash,
-            sources: formatted.sources,
-            resolution: formatted.resolution,
-            seeders: formatted.seeders
-          });
+          formattedStreams.push(formatStream(base));
         }
       } else {
-        const formatted = formatStream({
-          rawTitle: torrent.rawTitle,
-          infoHash: torrent.infoHash,
-          sizeBytes: torrent.sizeBytes,
-          seeders: torrent.seeders,
-          source: torrent.source
-        });
-
-        formattedStreams.push({
-          name: formatted.name,
-          title: formatted.title,
-          infoHash: formatted.infoHash,
-          sources: formatted.sources,
-          resolution: formatted.resolution,
-          seeders: formatted.seeders
-        });
+        formattedStreams.push(formatStream(base));
       }
     }
 
-    const maxPerRes = config.maxStreamsPerResolution || 5;
-    const grouped = {};
+    // Group same-title releases together, then cap each resolution.
+    const ordered = orderStreams(formattedStreams, config.groupByTitle !== false);
+    const maxPerRes = clamp(parseInt(config.maxStreamsPerResolution, 10) || 5, 1, 200);
+    const counts = Object.create(null);
     const finalStreams = [];
 
-    for (const stream of formattedStreams) {
-      const resKey = stream.resolution || 'other';
-      grouped[resKey] = grouped[resKey] || 0;
-      if (grouped[resKey] < maxPerRes) {
-        grouped[resKey]++;
-        finalStreams.push(stream);
-      }
+    for (const stream of ordered) {
+      const key = stream.resolution || 'other';
+      if ((counts[key] || 0) >= maxPerRes) continue;
+      counts[key] = (counts[key] || 0) + 1;
+      finalStreams.push(toStremioStream(stream));
     }
 
     res.json({ streams: finalStreams });
@@ -418,10 +478,25 @@ app.get('/playback/:config/:infoHash', async (req, res) => {
   try {
     const streamUrl = await debrid.resolveStream(config.debridProvider, config.debridApiKey, infoHash);
     if (streamUrl) {
+      res.set('Cache-Control', 'private, max-age=300');
       return res.redirect(302, streamUrl);
     }
     res.status(404).send('Failed to generate direct debrid stream link.');
   } catch (err) {
+    if (err.name === 'DebridPendingError') {
+      const retryAfter = err.retryAfter || 5;
+      res.set('Retry-After', String(retryAfter));
+      return res.status(503).type('html').send(
+        `<meta http-equiv="refresh" content="${retryAfter}">` +
+        '<p>Torrent is still processing on your Debrid provider. Retrying…</p>'
+      );
+    }
+
+    if (err.name === 'DebridError') {
+      console.error(`[Playback Error] ${err.message}`);
+      return res.status(502).send(`Playback resolution failed: ${err.message}`);
+    }
+
     console.error(`[Playback Error]`, err.message);
     res.status(500).send(`Playback resolution failed: ${err.message}`);
   }

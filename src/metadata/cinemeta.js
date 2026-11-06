@@ -4,7 +4,7 @@ const cache = require('../utils/cache');
 /**
  * Resolve an IMDb ID (and optional season/episode) into human-readable titles for searching.
  * Cinemeta is Stremio's official metadata catalog.
- * 
+ *
  * @param {string} type - 'movie' or 'series'
  * @param {string} id - 'tt1375666' or 'tt0903747:1:1'
  */
@@ -59,6 +59,38 @@ async function getMetadata(type, id) {
   };
 }
 
+/**
+ * Search Cinemeta's catalog so catalog tiles can use real posters instead of a
+ * single shared placeholder image. Results are cached for 24h.
+ */
+async function searchCatalog(type, query) {
+  if (!['movie', 'series'].includes(type) || !query) return [];
+
+  const cacheKey = `catalog:${type}:${String(query).trim().toLowerCase()}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const url = `https://v3-cinemeta.strem.io/catalog/${type}/top/search=${encodeURIComponent(query)}.json`;
+    const res = await client.get(url, { timeout: 6000 });
+    const metas = Array.isArray(res.data?.metas) ? res.data.metas : [];
+    cache.set(cacheKey, metas, 24 * 60 * 60 * 1000);
+    return metas;
+  } catch (err) {
+    console.warn(`[Cinemeta] Catalog search failed for "${query}": ${err.message}`);
+    return [];
+  }
+}
+
+function normalizeTitle(title) {
+  return String(title || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 module.exports = {
-  getMetadata
+  getMetadata,
+  searchCatalog,
+  normalizeTitle
 };

@@ -22,15 +22,17 @@ async function searchAll(query, enabledProviders = ['tpb', '1337x', 'limetorrent
   const activeScrapers = [];
 
   for (const p of enabledProviders) {
-    const key = p.toLowerCase().trim();
-    if (SCRAPERS[key]) {
+    const key = String(p).toLowerCase().trim();
+    if (SCRAPERS[key] && !activeScrapers.includes(SCRAPERS[key])) {
       activeScrapers.push(SCRAPERS[key]);
     }
   }
 
   if (activeScrapers.length === 0) {
     // Default to all if none matched
-    activeScrapers.push(...Object.values(SCRAPERS));
+    for (const scraper of Object.values(SCRAPERS)) {
+      if (!activeScrapers.includes(scraper)) activeScrapers.push(scraper);
+    }
   }
 
   // Execute in parallel with Promise.allSettled

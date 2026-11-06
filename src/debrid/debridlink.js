@@ -1,14 +1,21 @@
-const axios = require('axios');
+const { client } = require('../utils/http');
+const { pollUntil, debridPollOptions } = require('../utils/poll');
+const { DebridPendingError, DebridError } = require('./errors');
 
 const API_BASE = 'https://debrid-link.com/api/v2';
+const VIDEO_EXT = /\.(mp4|mkv|avi|mov|wmv|m4v|webm|flv)$/i;
+
+function authHeaders(apiKey) {
+  return { Authorization: `Bearer ${apiKey}` };
+}
 
 async function checkCache(apiKey, infoHashes) {
   if (!apiKey || !infoHashes || infoHashes.length === 0) return new Set();
 
   const cachedHashes = new Set();
   try {
-    const res = await axios.get(`${API_BASE}/seedbox/cached?url=${infoHashes.join(',')}`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
+    const res = await client.get(`${API_BASE}/seedbox/cached?url=${infoHashes.join(',')}`, {
+      headers: authHeaders(apiKey),
       timeout: 5000
     });
 
@@ -26,24 +33,62 @@ async function checkCache(apiKey, infoHashes) {
   return cachedHashes;
 }
 
-async function resolveStream(apiKey, infoHash) {
-  const headers = { Authorization: `Bearer ${apiKey}` };
-
-  const addRes = await axios.post(`${API_BASE}/seedbox/add`, {
-    url: `magnet:?xt=urn:btih:${infoHash}`,
-    async: false
-  }, { headers, timeout: 8000 });
-
-  const files = addRes.data?.value?.files || [];
-  const videoFiles = files
-    .filter(f => /\.(mp4|mkv|avi|mov|wmv)$/i.test(f.name || ''))
+function pickVideo(files) {
+  const videoFiles = (files || [])
+    .filter(f => VIDEO_EXT.test(f.name || f.path || ''))
     .sort((a, b) => (b.size || 0) - (a.size || 0));
+  return videoFiles[0] || (files || [])[0] || null;
+}
 
-  if (videoFiles.length > 0 && videoFiles[0].downloadUrl) {
-    return videoFiles[0].downloadUrl;
+function findSeedboxItem(list, hash, id) {
+  return (list || []).find(item =>
+    (id && String(item.id) === String(id)) ||
+    (item.hash && String(item.hash).toLowerCase() === hash)
+  ) || null;
+}
+
+async function resolveStream(apiKey, infoHash) {
+  const hash = String(infoHash).toLowerCase();
+  const headers = authHeaders(apiKey);
+
+  // 1. Add the magnet (or reuse the existing seedbox entry).
+  let itemId = null;
+  let immediateFiles = [];
+
+  try {
+    const addRes = await client.post(`${API_BASE}/seedbox/add`, {
+      url: `magnet:?xt=urn:btih:${hash}`,
+      async: false
+    }, { headers, timeout: 8000 });
+
+    itemId = addRes.data?.value?.id || null;
+    immediateFiles = addRes.data?.value?.files || [];
+  } catch (err) {
+    // Ignore and fall back to the seedbox list lookup.
   }
 
-  throw new Error('Debrid-Link: No streamable link found');
+  const immediate = pickVideo(immediateFiles);
+  if (immediate?.downloadUrl) return immediate.downloadUrl;
+
+  // 2. Poll the seedbox list until the files (and download URLs) are ready.
+  const ready = await pollUntil(async () => {
+    try {
+      const listRes = await client.get(`${API_BASE}/seedbox/list`, { headers, timeout: 8000 });
+      const list = Array.isArray(listRes.data?.value) ? listRes.data.value : [];
+      const item = findSeedboxItem(list, hash, itemId);
+      if (!item) return null;
+
+      itemId = itemId || item.id;
+      const file = pickVideo(item.files);
+      if (file?.downloadUrl) return file;
+      return null;
+    } catch (err) {
+      return null;
+    }
+  }, debridPollOptions());
+
+  if (!ready) throw new DebridPendingError('Debrid-Link', 5);
+  return ready.downloadUrl;
 }
 
 module.exports = {

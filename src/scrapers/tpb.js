@@ -1,6 +1,7 @@
 const cheerio = require('cheerio');
-const { client } = require('../utils/http');
+const { client, requestHtml } = require('../utils/http');
 const { extractInfoHash, parseSizeToBytes } = require('../utils/parser');
+const mirrors = require('../utils/mirrors');
 
 const TPB_MIRRORS = [
   'https://thehiddenbay.com',
@@ -16,16 +17,20 @@ async function searchThePirateBay(query) {
 
   // 1. Try HTML Mirrors (Bypasses Cloudflare block on datacenter IPs like Render)
   for (const mirror of TPB_MIRRORS) {
+    if (!mirrors.canUse(mirror)) continue;
+
     try {
       const url = `${mirror}/search/${encodeURIComponent(query)}/1/99/0`;
-      const res = await client.get(url, {
+      const res = await requestHtml(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
         },
         timeout: 4500
       });
 
-      if (res.status === 200 && res.data && res.data.includes('searchResult')) {
+      if (res.status === 200 && typeof res.data === 'string' && res.data.includes('searchResult')) {
+        mirrors.markSuccess(mirror);
+
         const $ = cheerio.load(res.data);
         $('table#searchResult tr').each((_, row) => {
           const titleAnchor = $(row).find('.detName a');
@@ -56,8 +61,11 @@ async function searchThePirateBay(query) {
           console.log(`[TPB] Found ${results.length} results from ${mirror}`);
           return results;
         }
+      } else {
+        mirrors.markFailure(mirror);
       }
     } catch (err) {
+      mirrors.markFailure(mirror);
       // Try next mirror
     }
   }

@@ -16,7 +16,7 @@ class Cache {
 
   set(key, value, ttlMs = this.defaultTTL) {
     // Basic eviction if memory grows too big (keep at most 2000 entries)
-    if (this.store.size > 2000) {
+    if (this.store.size >= 2000) {
       const oldestKey = this.store.keys().next().value;
       this.store.delete(oldestKey);
     }
@@ -28,6 +28,10 @@ class Cache {
 
   has(key) {
     return this.get(key) !== null;
+  }
+
+  clear() {
+    this.store.clear();
   }
 }
 

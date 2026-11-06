@@ -316,6 +316,37 @@
       </select>
     </div>
 
+    <!-- Resolution Filter & Grouping -->
+    <div class="section">
+      <div class="section-title">Video Resolutions</div>
+      <div class="grid-options">
+        <label class="checkbox-label">
+          <input type="checkbox" id="res-2160p" value="2160p" checked>
+          <span>4K (2160p)</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="res-1080p" value="1080p" checked>
+          <span>1080p</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="res-720p" value="720p" checked>
+          <span>720p</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="res-480p" value="480p" checked>
+          <span>480p</span>
+        </label>
+      </div>
+
+      <label class="checkbox-label" style="margin-top: 0.75rem;">
+        <input type="checkbox" id="groupByTitle" checked>
+        <span>Group releases of the same title together</span>
+      </label>
+      <div class="helper-text">
+        Quality variants (4K, 1080p, 720p, etc.) of the same movie or episode are listed together, ordered by quality.
+      </div>
+    </div>
+
     <!-- Action Buttons -->
     <div class="actions">
       <a href="#" id="installBtn" class="btn btn-primary">Install to Nuvio / Stremio</a>
@@ -390,6 +421,14 @@
       const debridApiKey = document.getElementById('debridApiKey').value.trim();
       const showP2PFallback = document.getElementById('showP2PFallback').checked;
       const maxStreams = parseInt(document.getElementById('maxStreams').value, 10) || 5;
+      const groupByTitle = document.getElementById('groupByTitle').checked;
+
+      const resolutions = [];
+      ['2160p', '1080p', '720p', '480p'].forEach(r => {
+        if (document.getElementById(`res-${r}`).checked) {
+          resolutions.push(r);
+        }
+      });
 
       return {
         mode: currentMode,
@@ -397,7 +436,9 @@
         debridProvider: debridProvider === 'none' ? null : debridProvider,
         debridApiKey: debridProvider === 'none' ? '' : debridApiKey,
         showP2PFallback,
-        maxStreamsPerResolution: maxStreams
+        maxStreamsPerResolution: maxStreams,
+        resolutions: resolutions.length > 0 ? resolutions : ['2160p', '1080p', '720p', '480p'],
+        groupByTitle
       };
     }
 

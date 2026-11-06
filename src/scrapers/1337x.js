@@ -1,6 +1,7 @@
 const cheerio = require('cheerio');
-const { client } = require('../utils/http');
+const { requestHtml } = require('../utils/http');
 const { extractInfoHash, parseSizeToBytes } = require('../utils/parser');
+const mirrors = require('../utils/mirrors');
 
 const PRIMARY_MIRRORS = [
   'https://1337x.to',
@@ -10,12 +11,20 @@ const PRIMARY_MIRRORS = [
 
 async function search1337x(query) {
   const results = [];
+
   // Try fastest mirror first with quick 3s timeout
   for (const domain of PRIMARY_MIRRORS) {
+    if (!mirrors.canUse(domain)) continue;
+
     try {
       const searchUrl = `${domain}/search/${encodeURIComponent(query)}/1/`;
-      const res = await client.get(searchUrl, { timeout: 3000 });
-      if (!res.data || res.status !== 200) continue;
+      const res = await requestHtml(searchUrl, { timeout: 3000 });
+      if (!res.data || res.status !== 200) {
+        mirrors.markFailure(domain);
+        continue;
+      }
+
+      mirrors.markSuccess(domain);
 
       const $ = cheerio.load(res.data);
       const rows = $('table.table-list tbody tr');
@@ -40,7 +49,7 @@ async function search1337x(query) {
       await Promise.allSettled(
         topRows.map(async (item) => {
           try {
-            const detailRes = await client.get(`${domain}${item.href}`, { timeout: 2500 });
+            const detailRes = await requestHtml(`${domain}${item.href}`, { timeout: 2500 });
             const magnet = detailRes.data?.match(/magnet:\?xt=urn:btih:[a-zA-Z0-9]{32,40}/i)?.[0];
             const hash = extractInfoHash(magnet);
             if (hash) {
@@ -58,6 +67,7 @@ async function search1337x(query) {
 
       if (results.length > 0) return results;
     } catch (e) {
+      mirrors.markFailure(domain);
       // Move to next mirror
     }
   }

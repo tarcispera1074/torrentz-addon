@@ -1,6 +1,7 @@
 const cheerio = require('cheerio');
-const { client } = require('../utils/http');
+const { requestHtml } = require('../utils/http');
 const { extractInfoHash, parseSizeToBytes } = require('../utils/parser');
+const mirrors = require('../utils/mirrors');
 
 const PRIMARY_MIRRORS = [
   'https://rargb.to',
@@ -10,10 +11,17 @@ const PRIMARY_MIRRORS = [
 async function searchRARBG(query) {
   const results = [];
   for (const domain of PRIMARY_MIRRORS) {
+    if (!mirrors.canUse(domain)) continue;
+
     try {
       const url = `${domain}/search/?search=${encodeURIComponent(query)}`;
-      const res = await client.get(url, { timeout: 3000 });
-      if (!res.data || res.status !== 200) continue;
+      const res = await requestHtml(url, { timeout: 3000 });
+      if (!res.data || res.status !== 200) {
+        mirrors.markFailure(domain);
+        continue;
+      }
+
+      mirrors.markSuccess(domain);
 
       const $ = cheerio.load(res.data);
       $('table.lista2t tr.lista2').each((_, el) => {
@@ -43,7 +51,9 @@ async function searchRARBG(query) {
       });
 
       if (results.length > 0) return results;
-    } catch (e) {}
+    } catch (e) {
+      mirrors.markFailure(domain);
+    }
   }
   return results;
 }

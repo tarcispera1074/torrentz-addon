@@ -30,15 +30,19 @@ Torrentz/
 ├── Dockerfile                # Production Docker container
 ├── docker-compose.yml        # Docker compose configuration
 ├── .env.example              # Environment variables template
+├── .github/workflows/ci.yml  # Unit + integration tests, secret scan
 ├── test/
-│   ├── test.js               # Unit test for metadata, parsing, and TPB
-│   └── test-server.js        # Full server integration test
+│   ├── unit/                 # Config, parser, cache, manifest, scrapers
+│   ├── integration/          # HTTP contract tests with stubbed scrapers
+│   ├── live/                 # Optional live Debrid tests (RUN_LIVE / env key)
+│   └── fixtures/             # Saved indexer HTML for parser tests
 └── src/
     ├── index.js              # Server entry point
     ├── server.js             # Express routes (manifest, stream, playback, UI)
-    ├── config.js             # Configuration encoder/decoder
+    ├── manifest.js           # Single source of truth for the addon manifest
+    ├── config.js             # Strict config encoder/decoder + sanitizer
     ├── metadata/
-    │   └── cinemeta.js       # Cinemeta IMDb ID -> Title & Season/Episode resolver
+    │   └── cinemeta.js       # IMDb resolver + catalog poster search
     ├── scrapers/
     │   ├── index.js          # Scraper orchestrator (parallel search & deduplication)
     │   ├── tpb.js            # ThePirateBay scraper
@@ -47,18 +51,31 @@ Torrentz/
     │   └── rargb.js          # RARBG mirrors scraper
     ├── debrid/
     │   ├── index.js          # Debrid orchestrator
+    │   ├── errors.js         # Pending vs. fatal provider errors
     │   ├── realdebrid.js     # Real-Debrid API integration
     │   ├── alldebrid.js      # AllDebrid API integration
     │   ├── premiumize.js     # Premiumize API integration
     │   ├── torbox.js         # TorBox API integration
     │   └── debridlink.js     # Debrid-Link API integration
     ├── utils/
-    │   ├── parser.js         # Title parsing, size formatting & stream badges
+    │   ├── parser.js         # Title parsing, grouping, sizes & stream badges
     │   ├── cache.js          # In-memory TTL cache
-    │   └── http.js           # Axios instance with desktop User-Agents
+    │   ├── cacheKeys.js      # Config-aware cache key builders
+    │   ├── http.js           # Axios client: proxies, retries, FlareSolverr
+    │   ├── mirrors.js        # Per-domain circuit breaker
+    │   └── poll.js           # Debrid polling helper
     └── views/
         └── configure.html    # Torrentio-style responsive dark mode web UI
 ```
+
+---
+
+## 🎞️ Grouping Quality Variants
+
+Torrent releases of the same movie or episode (1080p, 720p, different codecs or sources) are grouped together and listed as adjacent options under one shared title line. Inside a group, cached Debrid streams come first, then highest resolution, then seeders.
+
+Stremio/Nuvio do not support nested stream entries, so grouping is implemented as ordering + a shared display title. Disable it with the **"Group releases of the same title together"** toggle in the configuration UI (or `groupByTitle=false` in a pipe config).
+
 
 ---
 
@@ -108,11 +125,18 @@ Your addon is now accessible on port `7000`.
 
 ## 🧪 Testing
 
-Run the automated test suite to check metadata resolution and scrapers:
+The test suite runs entirely offline (indexer HTML and Debrid responses are mocked):
+
 ```bash
+# Unit tests: config, parser, cache, manifest, scrapers
 npm test
-```
-Or test the full HTTP server and streaming endpoints:
-```bash
-node test/test-server.js
+
+# HTTP contract tests (manifest, grouping, playback, catalog)
+npm run test:integration
+
+# Everything offline
+npm run test:all
+
+# Optional live Debrid test (requires TORBOX_API_KEY in .env)
+npm run test:live
 ```
