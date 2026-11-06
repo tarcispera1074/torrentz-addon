@@ -5,7 +5,7 @@ const { normalizeResolution, SUPPORTED_RESOLUTIONS } = require('./utils/parser')
  */
 const DEFAULT_CONFIG = {
   mode: 'all', // 'movies', 'xxx', 'all'
-  providers: ['tpb', '1337x', 'limetorrents', 'rargb'],
+  providers: ['tpb', '1337x', 'limetorrents', 'rargb', 'torlock', 'pussytorrents', 'yourbittorrent2', 'bootytape', 'mypornclub', 'lovetorrent', 'xxxclub', 'pornrips'],
   debridProvider: null, // 'realdebrid', 'alldebrid', 'premiumize', 'torbox', 'debridlink' or null
   debridApiKey: '',
   showP2PFallback: true,
@@ -21,7 +21,15 @@ const PROVIDER_ALIASES = {
   thepiratebay: 'tpb',
   '1337x': '1337x',
   limetorrents: 'limetorrents',
-  rargb: 'rargb'
+  rargb: 'rargb',
+  torlock: 'torlock',
+  pussytorrents: 'pussytorrents',
+  yourbittorrent2: 'yourbittorrent2',
+  bootytape: 'bootytape',
+  mypornclub: 'mypornclub',
+  lovetorrent: 'lovetorrent',
+  xxxclub: 'xxxclub',
+  pornrips: 'pornrips'
 };
 
 const DEBRID_PROVIDERS = new Set([

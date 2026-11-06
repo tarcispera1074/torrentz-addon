@@ -12,8 +12,26 @@ const tpb = require('../../src/scrapers/tpb');
 const x1337 = require('../../src/scrapers/1337x');
 const limetorrents = require('../../src/scrapers/limetorrents');
 const rargb = require('../../src/scrapers/rargb');
+const { parseResults } = require('../../src/scrapers/community');
 
 test.beforeEach(() => mirrors.reset());
+
+test('community scraper parser extracts inline magnets consistently', () => {
+  const results = parseResults(readFixture('community.html'), 'TorLock');
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].infoHash, '0123456789abcdef0123456789abcdef01234567');
+  assert.equal(results[0].sizeBytes, Math.round(2.4 * 1024 * 1024 * 1024));
+  assert.equal(results[0].seeders, 42);
+  assert.equal(results[0].source, 'TorLock');
+});
+
+test('all eight general and mixed providers are registered', () => {
+  const { SCRAPERS } = require('../../src/scrapers');
+  for (const provider of ['torlock', 'pussytorrents', 'yourbittorrent2', 'bootytape', 'mypornclub', 'lovetorrent', 'xxxclub', 'pornrips']) {
+    assert.equal(typeof SCRAPERS[provider].search, 'function', provider);
+  }
+});
 
 test('ThePirateBay scrape parses title, hash, size and seeders', async () => {
   const restore = installAdapter(() => ({ data: readFixture('tpb.html') }));

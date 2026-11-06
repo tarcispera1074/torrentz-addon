@@ -2,13 +2,29 @@ const tpb = require('./tpb');
 const x1337 = require('./1337x');
 const limetorrents = require('./limetorrents');
 const rargb = require('./rargb');
+const torlock = require('./torlock');
+const pussytorrents = require('./pussytorrents');
+const yourbittorrent2 = require('./yourbittorrent2');
+const bootytape = require('./bootytape');
+const mypornclub = require('./mypornclub');
+const lovetorrent = require('./lovetorrent');
+const xxxclub = require('./xxxclub');
+const pornrips = require('./pornrips');
 
 const SCRAPERS = {
   thepiratebay: tpb,
   tpb: tpb,
   '1337x': x1337,
   limetorrents: limetorrents,
-  rargb: rargb
+  rargb: rargb,
+  torlock,
+  pussytorrents,
+  yourbittorrent2,
+  bootytape,
+  mypornclub,
+  lovetorrent,
+  xxxclub,
+  pornrips
 };
 
 /**

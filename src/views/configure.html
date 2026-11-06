@@ -278,6 +278,14 @@
           <input type="checkbox" id="provider-rargb" value="rargb" checked>
           <span>RARBG Mirrors</span>
         </label>
+        <label class="checkbox-label"><input type="checkbox" id="provider-torlock" value="torlock" checked><span>TorLock</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="provider-pussytorrents" value="pussytorrents" checked><span>PussyTorrents</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="provider-yourbittorrent2" value="yourbittorrent2" checked><span>YourBittorrent2</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="provider-bootytape" value="bootytape" checked><span>BootyTape</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="provider-mypornclub" value="mypornclub" checked><span>MyPornClub</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="provider-lovetorrent" value="lovetorrent" checked><span>LoveTorrent</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="provider-xxxclub" value="xxxclub" checked><span>XXXClub</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="provider-pornrips" value="pornrips" checked><span>PornRips</span></label>
       </div>
     </div>
 
@@ -411,7 +419,7 @@
 
     function buildConfigObject() {
       const providers = [];
-      ['tpb', '1337x', 'limetorrents', 'rargb'].forEach(p => {
+      ['tpb', '1337x', 'limetorrents', 'rargb', 'torlock', 'pussytorrents', 'yourbittorrent2', 'bootytape', 'mypornclub', 'lovetorrent', 'xxxclub', 'pornrips'].forEach(p => {
         if (document.getElementById(`provider-${p}`).checked) {
           providers.push(p);
         }
