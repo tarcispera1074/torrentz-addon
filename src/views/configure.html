@@ -141,6 +141,25 @@
       height: 16px;
     }
 
+    .provider-actions {
+      display: flex;
+      gap: 0.6rem;
+      margin: 0.75rem 0;
+    }
+
+    .provider-action {
+      background: transparent;
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      color: var(--text);
+      cursor: pointer;
+      padding: 0.4rem 0.75rem;
+    }
+
+    .provider-action:hover {
+      background: rgba(108, 92, 231, 0.2);
+    }
+
     .input-group {
       margin-top: 0.75rem;
     }
@@ -261,6 +280,10 @@
     <!-- Torrent Providers -->
     <div class="section">
       <div class="section-title">Torrent Providers</div>
+      <div class="provider-actions" aria-label="Provider selection actions">
+        <button type="button" class="provider-action" onclick="setAllProviders(true)">Select all</button>
+        <button type="button" class="provider-action" onclick="setAllProviders(false)">Deselect all</button>
+      </div>
       <div class="grid-options">
         <label class="checkbox-label">
           <input type="checkbox" id="provider-tpb" value="tpb" checked>
@@ -417,6 +440,13 @@
         group.style.display = 'block';
         help.innerHTML = providerKeyLinks[val] || '';
       }
+      updateInstallLink();
+    }
+
+    function setAllProviders(selected) {
+      document.querySelectorAll('input[id^="provider-"]').forEach(input => {
+        input.checked = selected;
+      });
       updateInstallLink();
     }
 
