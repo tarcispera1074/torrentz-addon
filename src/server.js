@@ -57,6 +57,18 @@ function posterKey(name, year) {
   return `${normalizeTitle(name)}|${extractYear(year)}`;
 }
 
+function encodeGroupId(key) {
+  return Buffer.from(String(key), 'utf8').toString('base64url');
+}
+
+function decodeGroupId(value) {
+  try {
+    return Buffer.from(value, 'base64url').toString('utf8');
+  } catch (err) {
+    return null;
+  }
+}
+
 function escapeXml(value) {
   return String(value)
     .replace(/&/g, '&amp;')
@@ -115,25 +127,37 @@ async function buildCatalogMetas(torrents, type, searchQuery, req) {
     if (!byKey.has(withoutYear)) byKey.set(withoutYear, meta);
   }
 
-  return torrents.map(torrent => {
+  const groups = new Map();
+  for (const torrent of torrents) {
     const info = getTitleInfo(torrent.rawTitle);
-    const hit = byKey.get(posterKey(info.title, info.year)) || byKey.get(posterKey(info.title, ''));
+    const key = info.key || torrent.infoHash;
+    if (!groups.has(key)) groups.set(key, { key, info, torrents: [] });
+    groups.get(key).torrents.push(torrent);
+  }
 
-    // Store into cache for meta and stream lookup
-    cache.set(`torrent:${torrent.infoHash}`, torrent, CATALOG_TORRENT_TTL);
+  return [...groups.values()].map(group => {
+    const { info, key, torrents: variants } = group;
+    const first = variants[0];
+    const hit = byKey.get(posterKey(info.title, info.year)) || byKey.get(posterKey(info.title, ''));
+    const groupId = encodeGroupId(key);
+
+    // Store every quality/size variant under one catalog item.
+    for (const torrent of variants) {
+      cache.set(`torrent:${torrent.infoHash}`, torrent, CATALOG_TORRENT_TTL);
+    }
+    cache.set(`torrent-group:${groupId}`, variants, CATALOG_TORRENT_TTL);
 
     const meta = {
-      id: `torrentz:${torrent.infoHash}`,
+      id: `torrentz-group:${groupId}`,
       type: type || 'movie',
-      name: info.label || torrent.rawTitle,
-      poster: hit?.poster || torrent.poster || placeholderPosterUrl(req, info.label || torrent.rawTitle),
+      name: info.label || first.rawTitle,
+      poster: hit?.poster || first.poster || placeholderPosterUrl(req, info.label || first.rawTitle),
       posterShape: 'poster',
-      description: `👤 ${torrent.seeders} seeders | 💾 ${formatSize(torrent.sizeBytes)} | ⚙️ ${torrent.source}`
+      description: `${variants.length} quality options | Best: ${formatSize(Math.max(...variants.map(t => t.sizeBytes || 0)))} | ⚙️ ${first.source}`
     };
 
     if (hit?.background) meta.background = hit.background;
     if (info.year) meta.releaseInfo = info.year;
-
     return meta;
   });
 }
@@ -321,6 +345,24 @@ app.get('/:config/catalog/:type/:id/:extra.json', (req, res) => handleCatalog(re
 async function handleMeta(req, res, configStr) {
   const { type, id } = req.params;
 
+  if (id.startsWith('torrentz-group:')) {
+    const groupId = id.replace('torrentz-group:', '');
+    const variants = cache.get(`torrent-group:${groupId}`) || [];
+    const first = variants[0];
+    const info = first ? getTitleInfo(first.rawTitle) : null;
+    const name = info?.label || `Torrent group ${groupId.slice(0, 8)}`;
+    return res.json({
+      meta: {
+        id,
+        type: type || 'movie',
+        name,
+        poster: placeholderPosterUrl(req, name),
+        posterShape: 'poster',
+        description: `${variants.length} quality and size options`
+      }
+    });
+  }
+
   if (id.startsWith('torrentz:')) {
     const infoHash = id.replace('torrentz:', '').toLowerCase();
     const cached = cache.get(`torrent:${infoHash}`);
@@ -357,8 +399,13 @@ async function handleStreams(req, res, configStr) {
   try {
     let torrents = [];
 
-    // Case A: Stream requested from Catalog item (torrentz:{infoHash})
-    if (id.startsWith('torrentz:')) {
+    // Case A: Stream requested from a grouped catalog item.
+    if (id.startsWith('torrentz-group:')) {
+      const groupId = id.replace('torrentz-group:', '');
+      torrents = cache.get(`torrent-group:${groupId}`) || [];
+    }
+    // Case B: Stream requested from a single catalog item (legacy IDs).
+    else if (id.startsWith('torrentz:')) {
       const hash = id.replace('torrentz:', '').toLowerCase();
       const cached = cache.get(`torrent:${hash}`);
       torrents = [{
@@ -369,7 +416,7 @@ async function handleStreams(req, res, configStr) {
         source: cached ? cached.source : 'Indexer'
       }];
     }
-    // Case B: Stream requested from IMDb/Cinemeta item (tt...)
+    // Case C: Stream requested from IMDb/Cinemeta item (tt...)
     else {
       const meta = await getMetadata(type, id);
       if (!meta || !meta.name) {

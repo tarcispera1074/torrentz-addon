@@ -171,6 +171,13 @@ test('catalog uses real Cinemeta posters and an SVG fallback', async () => {
       source: '1337x'
     },
     {
+      rawTitle: 'Inception.2010.720p.WEB-DL.x264-OTHER',
+      infoHash: 'g'.repeat(40),
+      sizeBytes: 512,
+      seeders: 4,
+      source: 'tpb'
+    },
+    {
       rawTitle: 'Unknown.Movie.2024.1080p.WEB-DL.x264-OTHER',
       infoHash: 'f'.repeat(40),
       sizeBytes: 2048,
@@ -187,6 +194,15 @@ test('catalog uses real Cinemeta posters and an SVG fallback', async () => {
     assert.equal(body.metas[0].poster, 'https://img.example/inception.jpg');
     assert.equal(body.metas[0].background, 'https://img.example/inception-bg.jpg');
     assert.equal(body.metas[0].releaseInfo, '2010');
+    assert.match(body.metas[0].id, /^torrentz-group:/);
+    assert.match(body.metas[0].description, /2 quality options/);
+
+    const groupedStreams = await getJson(`/stream/movie/${encodeURIComponent(body.metas[0].id)}.json`);
+    assert.equal(groupedStreams.body.streams.length, 2);
+    assert.deepEqual(
+      groupedStreams.body.streams.map(stream => stream.name),
+      ['[P2P] 1080p', '[P2P] 720p']
+    );
 
     assert.match(body.metas[1].poster, /^https:\/\/placehold\.co\/300x450\/.*\.png\?text=/);
   } finally {
