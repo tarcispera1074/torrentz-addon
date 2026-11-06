@@ -5,7 +5,7 @@ const { normalizeResolution, SUPPORTED_RESOLUTIONS } = require('./utils/parser')
  */
 const DEFAULT_CONFIG = {
   mode: 'all', // 'movies', 'xxx', 'all'
-  providers: ['tpb', '1337x', 'limetorrents', 'rargb', 'torlock', 'pussytorrents', 'yourbittorrent2', 'bootytape', 'mypornclub', 'lovetorrent', 'xxxclub', 'pornrips'],
+  providers: ['tpb', '1337x', 'limetorrents', 'rargb', 'torlock', 'pussytorrents', 'yourbittorrent2', 'bootytape', 'mypornclub', 'lovetorrent', 'xxxclub', 'pornrips', 'sukebei', 'tokyotosho', 'onejav', '141jav', '141ppv', 'javjunkies', 'javbee', 'ijavtorrent', 'myjavbay', 'avfan', 'ffjav', 'projectjav', 'vrjav'],
   debridProvider: null, // 'realdebrid', 'alldebrid', 'premiumize', 'torbox', 'debridlink' or null
   debridApiKey: '',
   showP2PFallback: true,
@@ -29,7 +29,21 @@ const PROVIDER_ALIASES = {
   mypornclub: 'mypornclub',
   lovetorrent: 'lovetorrent',
   xxxclub: 'xxxclub',
-  pornrips: 'pornrips'
+  pornrips: 'pornrips',
+  sukebei: 'sukebei',
+  'sukebei-nyaa': 'sukebei',
+  tokyotosho: 'tokyotosho',
+  onejav: 'onejav',
+  '141jav': '141jav',
+  '141ppv': '141ppv',
+  javjunkies: 'javjunkies',
+  javbee: 'javbee',
+  ijavtorrent: 'ijavtorrent',
+  myjavbay: 'myjavbay',
+  avfan: 'avfan',
+  ffjav: 'ffjav',
+  projectjav: 'projectjav',
+  vrjav: 'vrjav'
 };
 
 const DEBRID_PROVIDERS = new Set([

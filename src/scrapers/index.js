@@ -10,6 +10,19 @@ const mypornclub = require('./mypornclub');
 const lovetorrent = require('./lovetorrent');
 const xxxclub = require('./xxxclub');
 const pornrips = require('./pornrips');
+const sukebei = require('./sukebei');
+const tokyotosho = require('./tokyotosho');
+const onejav = require('./onejav');
+const jav141 = require('./141jav');
+const ppv141 = require('./141ppv');
+const javjunkies = require('./javjunkies');
+const javbee = require('./javbee');
+const ijavtorrent = require('./ijavtorrent');
+const myjavbay = require('./myjavbay');
+const avfan = require('./avfan');
+const ffjav = require('./ffjav');
+const projectjav = require('./projectjav');
+const vrjav = require('./vrjav');
 
 const SCRAPERS = {
   thepiratebay: tpb,
@@ -24,7 +37,20 @@ const SCRAPERS = {
   mypornclub,
   lovetorrent,
   xxxclub,
-  pornrips
+  pornrips,
+  sukebei,
+  tokyotosho,
+  onejav,
+  '141jav': jav141,
+  '141ppv': ppv141,
+  javjunkies,
+  javbee,
+  ijavtorrent,
+  myjavbay,
+  avfan,
+  ffjav,
+  projectjav,
+  vrjav
 };
 
 /**

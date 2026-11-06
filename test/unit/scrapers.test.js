@@ -33,6 +33,13 @@ test('all eight general and mixed providers are registered', () => {
   }
 });
 
+test('JAV providers are registered', () => {
+  const { SCRAPERS } = require('../../src/scrapers');
+  for (const provider of ['sukebei', 'tokyotosho', 'onejav', '141jav', '141ppv', 'javjunkies', 'javbee', 'ijavtorrent', 'myjavbay', 'avfan', 'ffjav', 'projectjav', 'vrjav']) {
+    assert.equal(typeof SCRAPERS[provider].search, 'function', provider);
+  }
+});
+
 test('ThePirateBay scrape parses title, hash, size and seeders', async () => {
   const restore = installAdapter(() => ({ data: readFixture('tpb.html') }));
 
