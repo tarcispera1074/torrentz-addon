@@ -5,7 +5,8 @@ const cache = require('../utils/cache');
 const SEARCH_TTL = 15 * 60 * 1000;
 const SCENE_TTL = 24 * 60 * 60 * 1000;
 const EMPTY_TTL = 2 * 60 * 1000;
-const REQUEST_TIMEOUT_MS = 5000;
+const REQUEST_TIMEOUT_MS = 4000;
+const inFlightSearches = new Map();
 
 const SOURCES = {
   tpdb: {
@@ -55,6 +56,14 @@ const SCENE_FIELDS = `
 const SEARCH_QUERY = `
   query SearchScenes($term: String!, $limit: Int) {
     searchScenes(term: $term, limit: $limit) {
+      scenes { ${SCENE_FIELDS} }
+    }
+  }
+`;
+
+const BROWSE_QUERY = `
+  query BrowseScenes($limit: Int!) {
+    queryScenes(input: { page: 1, per_page: $limit, direction: DESC, sort: DATE }) {
       scenes { ${SCENE_FIELDS} }
     }
   }
@@ -160,38 +169,53 @@ async function search(source, token, term, limit = 25) {
   const provider = SOURCES[source];
   const query = String(term || '').trim().slice(0, 160);
   const apiKey = String(token || '').trim();
-  if (!provider || !apiKey || !query) return [];
+  if (!provider || !apiKey) return [];
 
-  const key = searchCacheKey(source, apiKey, query);
+  const key = searchCacheKey(source, apiKey, query || '__recent__');
   const cached = cache.get(key);
   if (cached) return cached;
+  if (inFlightSearches.has(key)) return inFlightSearches.get(key);
 
-  try {
-    let rawScenes;
+  const work = (async () => {
     try {
-      rawScenes = extractScenes(
-        await postGraphQL(source, apiKey, SEARCH_QUERY, { term: query, limit: Math.max(1, Math.min(50, limit)) }),
-        'searchScenes'
-      );
-    } catch (error) {
-      // Older Stash-Box-compatible deployments expose the singular legacy
-      // field and return the scene list directly.
-      if (!isSchemaCompatibilityError(error)) throw error;
-      rawScenes = extractScenes(
-        await postGraphQL(source, apiKey, LEGACY_SEARCH_QUERY, { term: query, limit: Math.max(1, Math.min(50, limit)) }),
-        'searchScene'
-      );
-    }
+      let rawScenes;
+      if (!query) {
+        const response = await postGraphQL(source, apiKey, BROWSE_QUERY, {
+          limit: Math.max(1, Math.min(50, limit))
+        });
+        rawScenes = extractScenes(response, 'queryScenes');
+      } else {
+        try {
+          rawScenes = extractScenes(
+            await postGraphQL(source, apiKey, SEARCH_QUERY, { term: query, limit: Math.max(1, Math.min(50, limit)) }),
+            'searchScenes'
+          );
+        } catch (error) {
+          // Older Stash-Box-compatible deployments expose the singular legacy
+          // field and return the scene list directly.
+          if (!isSchemaCompatibilityError(error)) throw error;
+          rawScenes = extractScenes(
+            await postGraphQL(source, apiKey, LEGACY_SEARCH_QUERY, { term: query, limit: Math.max(1, Math.min(50, limit)) }),
+            'searchScene'
+          );
+        }
+      }
 
-    const scenes = rawScenes
-      .map(item => normalizeScene(source, item))
-      .filter(item => item && item.title);
-    cache.set(key, scenes, scenes.length ? SEARCH_TTL : EMPTY_TTL);
-    return scenes;
-  } catch (error) {
-    console.warn(`[Metadata] ${provider.name} scene search failed: ${error.message}`);
-    return [];
-  }
+      const scenes = rawScenes
+        .map(item => normalizeScene(source, item))
+        .filter(item => item && item.title);
+      cache.set(key, scenes, scenes.length ? SEARCH_TTL : EMPTY_TTL);
+      return scenes;
+    } catch (error) {
+      console.warn(`[Metadata] ${provider.name} scene search failed: ${error.message}`);
+      return [];
+    } finally {
+      inFlightSearches.delete(key);
+    }
+  })();
+
+  inFlightSearches.set(key, work);
+  return work;
 }
 
 async function getScene(source, token, id) {

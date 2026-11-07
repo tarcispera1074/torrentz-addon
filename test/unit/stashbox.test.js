@@ -80,6 +80,25 @@ test('falls back to the legacy singular scene search field on older instances', 
   }
 });
 
+test('empty catalog searches browse recent scenes instead of querying a placeholder term', async () => {
+  cache.clear();
+  let seenQuery;
+  const restore = installAdapter(config => {
+    const body = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+    seenQuery = body.query;
+    return { data: { data: { queryScenes: { scenes: [{ id: 'recent-1', title: 'Recent scene' }] } } } };
+  });
+
+  try {
+    const scenes = await stashbox.search('pmvstash', 'read-token', '');
+    assert.match(seenQuery, /queryScenes/);
+    assert.equal(scenes[0].title, 'Recent scene');
+  } finally {
+    restore();
+    cache.clear();
+  }
+});
+
 test('findScene loads a scene by source-specific ID', async () => {
   cache.clear();
   const restore = installAdapter(config => {

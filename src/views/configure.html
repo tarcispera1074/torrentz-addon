@@ -75,42 +75,6 @@
       font-weight: 600;
     }
 
-    .mode-cards {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 0.6rem;
-      margin-bottom: 1.2rem;
-    }
-
-    .mode-card {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 0.8rem 0.5rem;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .mode-card.active {
-      border-color: var(--accent);
-      background: rgba(108, 92, 231, 0.15);
-    }
-
-    .mode-card input {
-      display: none;
-    }
-
-    .mode-icon {
-      font-size: 1.4rem;
-      margin-bottom: 0.3rem;
-    }
-
-    .mode-label {
-      font-size: 0.85rem;
-      font-weight: 600;
-    }
-
     .grid-options {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -337,39 +301,14 @@
   <div class="container">
     <div class="header">
       <h1 id="addonTitle">Torrentz</h1>
-      <p id="addonSubtitle">Select your addon mode & configure streaming providers</p>
-    </div>
-
-    <!-- Mode Selector: Movies & Series vs XXX / Adult vs All -->
-    <div class="section">
-      <div class="section-title">Addon Mode (Install Separately or Combined)</div>
-      <div class="mode-cards">
-        <label class="mode-card" id="card-movies" onclick="setMode('movies')">
-          <input type="radio" name="addonMode" value="movies">
-          <div class="mode-icon">🎬</div>
-          <div class="mode-label">Movies & TV</div>
-        </label>
-        <label class="mode-card" id="card-xxx" onclick="setMode('xxx')">
-          <input type="radio" name="addonMode" value="xxx">
-          <div class="mode-icon">🔞</div>
-          <div class="mode-label">XXX & Adult</div>
-        </label>
-        <label class="mode-card active" id="card-all" onclick="setMode('all')">
-          <input type="radio" name="addonMode" value="all" checked>
-          <div class="mode-icon">⚡</div>
-          <div class="mode-label">All-in-One</div>
-        </label>
-      </div>
-      <div class="helper-text" id="modeDescription">
-        Install both <strong>Movies & TV</strong> and <strong>XXX & Adult</strong> separately in Nuvio to keep mainstream media and adult search cleanly separated!
-      </div>
+      <p id="addonSubtitle">Search adult scene metadata and matching torrents</p>
     </div>
 
     <!-- Adult Metadata Sources -->
     <div class="section" id="metadataSourcesSection">
       <div class="section-title">Adult Metadata Catalogs (Stash-Box)</div>
       <div class="helper-text" style="margin-bottom: 0.8rem;">
-        Add read-only API keys to search scenes and show catalog posters. Enabled sources are queried together and duplicate records are combined.
+        Add read-only API keys to search scenes and show catalog posters. Each enabled source gets its own catalog, so a search only queries that source.
       </div>
       <div class="provider-actions" aria-label="Metadata source selection actions">
         <button type="button" class="provider-action" onclick="setAllMetadataSources(true)">Select all</button>
@@ -579,8 +518,6 @@
   </div>
 
   <script>
-    let currentMode = 'all';
-
     const providerKeyLinks = {
       realdebrid: '<a href="https://real-debrid.com/apitoken" target="_blank" rel="noopener">Find your Real-Debrid API Token here</a>',
       alldebrid: '<a href="https://alldebrid.com/apikeys" target="_blank" rel="noopener">Generate your AllDebrid API Key here</a>',
@@ -588,34 +525,6 @@
       torbox: '<a href="https://torbox.app/settings" target="_blank" rel="noopener">Find your TorBox API Token in Account Settings</a>',
       debridlink: '<a href="https://debrid-link.com/webapp/register" target="_blank" rel="noopener">Get your Debrid-Link API Key here</a>'
     };
-
-    function setMode(mode) {
-      currentMode = mode;
-      ['movies', 'xxx', 'all'].forEach(m => {
-        const card = document.getElementById(`card-${m}`);
-        if (m === mode) {
-          card.classList.add('active');
-        } else {
-          card.classList.remove('active');
-        }
-      });
-
-      const title = document.getElementById('addonTitle');
-      const installBtn = document.getElementById('installBtn');
-
-      if (mode === 'movies') {
-        title.innerText = 'Torrentz (Movies & TV)';
-        installBtn.innerText = 'Install Movies & TV Addon';
-      } else if (mode === 'xxx') {
-        title.innerText = 'Torrentz XXX (Adult & Other)';
-        installBtn.innerText = 'Install XXX & Adult Addon';
-      } else {
-        title.innerText = 'Torrentz';
-        installBtn.innerText = 'Install All-in-One Addon';
-      }
-
-      updateInstallLink();
-    }
 
     function toggleDebridFields() {
       const select = document.getElementById('debridProvider');
@@ -716,7 +625,6 @@
       });
 
       return {
-        mode: currentMode,
         providers,
         metadataSources,
         metadataApiKeys,

@@ -9,44 +9,33 @@ test('default manifest is valid and uses the shared version constant', () => {
   assert.equal(manifest.version, ADDON_VERSION);
   assert.equal(manifest.id, 'community.torrentz.addon');
   assert.deepEqual(manifest.resources, ['catalog', 'meta', 'stream']);
-  assert.ok(manifest.types.includes('movie'));
-  assert.ok(manifest.types.includes('series'));
+  assert.deepEqual(manifest.types, ['movie']);
+  assert.deepEqual(manifest.catalogs, []);
   assert.equal(manifest.behaviorHints.configurable, true);
 });
 
-test('catalog ids are unique in every mode', () => {
-  for (const mode of ['all', 'movies', 'xxx']) {
-    const manifest = createManifest({ ...DEFAULT_CONFIG, mode });
-    const ids = manifest.catalogs.map(catalog => catalog.id);
-    assert.equal(new Set(ids).size, ids.length, `duplicate catalog id in ${mode} mode`);
-  }
-});
-
-test('movies mode exposes movie and series catalogs only', () => {
-  const manifest = createManifest({ ...DEFAULT_CONFIG, mode: 'movies' });
-
-  assert.equal(manifest.id, 'community.torrentz.movies');
-  assert.deepEqual(manifest.types, ['movie', 'series']);
-  assert.deepEqual(manifest.catalogs.map(c => c.type).sort(), ['movie', 'series']);
-});
-
-test('all mode adds the metadata catalog only when an enabled source has a key', () => {
+test('porn-only manifest exposes a distinct catalog for each enabled keyed source', () => {
   const manifest = createManifest({
     ...DEFAULT_CONFIG,
-    metadataSources: ['tpdb', 'stashdb'],
-    metadataApiKeys: { tpdb: 'token' }
+    metadataSources: ['tpdb', 'stashdb', 'javstash', 'pmvstash', 'fansdb'],
+    metadataApiKeys: {
+      tpdb: 'tpdb-token',
+      stashdb: 'stashdb-token',
+      javstash: 'javstash-token',
+      pmvstash: 'pmvstash-token',
+      fansdb: 'fansdb-token'
+    }
   });
 
-  assert.ok(manifest.catalogs.some(catalog => catalog.id === 'torrentz_xxx' && catalog.name === 'Adult Scenes'));
+  assert.deepEqual(manifest.catalogs.map(catalog => catalog.name), [
+    'Torrentz: PornDB',
+    'Torrentz: StashDB',
+    'Torrentz: JAVStash',
+    'Torrentz: PMV Stash',
+    'Torrentz: FansDB'
+  ]);
+  assert.equal(new Set(manifest.catalogs.map(catalog => catalog.id)).size, 5);
   assert.ok(manifest.idPrefixes.includes('tpdb-scene:'));
-});
-
-test('xxx mode exposes a single movie catalog', () => {
-  const manifest = createManifest({ ...DEFAULT_CONFIG, mode: 'xxx' });
-
-  assert.equal(manifest.id, 'community.torrentz.xxx');
-  assert.deepEqual(manifest.types, ['movie']);
-  assert.equal(manifest.catalogs.length, 1);
 });
 
 test('manifest name includes the Debrid provider name', () => {

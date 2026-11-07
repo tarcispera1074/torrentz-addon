@@ -1,79 +1,35 @@
 const { DEFAULT_CONFIG } = require('./config');
 const debrid = require('./debrid');
 
-const ADDON_VERSION = '1.2.2';
+const ADDON_VERSION = '1.3.0';
+
+const METADATA_CATALOGS = [
+  { source: 'tpdb', label: 'PornDB' },
+  { source: 'stashdb', label: 'StashDB' },
+  { source: 'javstash', label: 'JAVStash' },
+  { source: 'pmvstash', label: 'PMV Stash' },
+  { source: 'fansdb', label: 'FansDB' }
+];
 
 /**
- * Manifest generator supporting split modes: 'movies', 'xxx', 'all'
+ * Build the adult-only manifest, exposing one independently searchable catalog
+ * for each Stash-Box source configured with a key.
  */
 function createManifest(config = DEFAULT_CONFIG) {
-  const mode = config.mode || 'all';
-  const hasMetadataCatalog = (config.metadataSources || []).some(source => config.metadataApiKeys?.[source]);
-  let id = 'community.torrentz.addon';
-  let name = 'Torrentz';
-  let description = 'High-speed torrent scraper for ThePirateBay, 1337x, LimeTorrents, and RARBG';
-  let types = ['movie', 'series', 'other'];
-  let catalogs = [];
+  const sources = new Set(config.metadataSources || []);
+  const catalogs = METADATA_CATALOGS
+    .filter(({ source }) => sources.has(source) && config.metadataApiKeys?.[source])
+    .map(({ source, label }) => ({
+      type: 'movie',
+      id: `torrentz_${source}`,
+      name: `Torrentz: ${label}`,
+      extra: [{ name: 'search', isRequired: false }]
+    }));
 
-  if (mode === 'movies') {
-    id = 'community.torrentz.movies';
-    name = 'Torrentz (Movies & TV)';
-    description = 'Mainstream Movies & TV Series torrent streams with Debrid support';
-    types = ['movie', 'series'];
-    catalogs = [
-      {
-        type: 'movie',
-        id: 'torrentz_movies',
-        name: 'Torrentz Movies',
-        extra: [{ name: 'search', isRequired: false }]
-      },
-      {
-        type: 'series',
-        id: 'torrentz_series',
-        name: 'Torrentz Series',
-        extra: [{ name: 'search', isRequired: false }]
-      }
-    ];
-  } else if (mode === 'xxx' || mode === 'other') {
-    id = 'community.torrentz.xxx';
-    name = 'Torrentz XXX';
-    description = 'Adult video & performer torrent scraper';
-    types = ['movie'];
-    catalogs = [
-      {
-        type: 'movie',
-        id: 'torrentz_xxx',
-        name: hasMetadataCatalog ? 'Adult Scene Catalog' : 'Torrentz XXX',
-        extra: [{ name: 'search', isRequired: false }]
-      }
-    ];
-  } else {
-    // Mode = 'all'
-    id = 'community.torrentz.addon';
-    name = 'Torrentz (All-in-One)';
-    description = 'Movies, TV series, adult performers & custom torrents';
-    types = ['movie', 'series'];
-    catalogs = [
-      {
-        type: 'movie',
-        id: 'torrentz_movies',
-        name: 'Torrentz Movies',
-        extra: [{ name: 'search', isRequired: false }]
-      },
-      {
-        type: 'series',
-        id: 'torrentz_series',
-        name: 'Torrentz Series',
-        extra: [{ name: 'search', isRequired: false }]
-      },
-      ...(hasMetadataCatalog ? [{
-        type: 'movie',
-        id: 'torrentz_xxx',
-        name: 'Adult Scenes',
-        extra: [{ name: 'search', isRequired: false }]
-      }] : [])
-    ];
-  }
+  const id = 'community.torrentz.addon';
+  let name = 'Torrentz';
+  const description = 'Adult scene metadata with torrent results from enabled providers';
+  const types = ['movie'];
 
   if (config.debridProvider) {
     const prov = debrid.getProvider(config.debridProvider);
@@ -107,5 +63,6 @@ function createManifest(config = DEFAULT_CONFIG) {
 
 module.exports = {
   ADDON_VERSION,
+  METADATA_CATALOGS,
   createManifest
 };

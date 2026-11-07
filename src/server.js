@@ -113,6 +113,11 @@ function parseMetadataSceneId(id) {
   }
 }
 
+function metadataSourceForCatalogId(id) {
+  const match = String(id || '').match(/^torrentz_(tpdb|stashdb|javstash|pmvstash|fansdb)$/);
+  return match ? match[1] : null;
+}
+
 function metadataSceneId(scene) {
   return `${scene.provider}-scene:${encodeURIComponent(scene.id)}`;
 }
@@ -147,9 +152,6 @@ function buildMetadataCatalogMetas(scenes, type, req) {
     if (!groups.has(key)) groups.set(key, { primary: scene, scenes: [] });
     const group = groups.get(key);
     group.scenes.push(scene);
-    // Prefer ThePornDB as the broad primary record when sources describe the
-    // same scene; retain all provider records as aliases for restart recovery.
-    if (scene.provider === 'tpdb') group.primary = scene;
   }
 
   return [...groups.values()].map(({ primary, scenes: matches }) => {
@@ -505,23 +507,28 @@ async function handleCatalog(req, res, configStr) {
   const { type, id, extra } = req.params;
   const config = decodeConfig(configStr);
   const parsedExtra = parseCatalogExtra(req, extra);
+  const metadataSource = metadataSourceForCatalogId(id);
 
   let searchQuery = req.query.search || parsedExtra.search || '';
   searchQuery = String(searchQuery || '').trim();
 
   if (!searchQuery) {
-    if (id === 'torrentz_xxx') {
+    if (metadataSource) {
+      searchQuery = '';
+    } else if (id === 'torrentz_xxx') {
       searchQuery = '1080p';
     } else {
       searchQuery = type === 'movie' ? '2024' : (type === 'series' ? 'S01E01' : '1080p');
     }
   }
 
-  console.log(`[Catalog Search] Querying torrents for: "${searchQuery}" (${type})`);
+  console.log(`[Catalog Search] Querying ${metadataSource || 'torrent'} catalog for: "${searchQuery}" (${type})`);
 
   const isAdult = type === 'other' || /xxx/i.test(id);
-  const activeMetadataSources = id === 'torrentz_xxx'
-    ? (config.metadataSources || []).filter(source => stashbox.SOURCES[source] && config.metadataApiKeys?.[source])
+  const activeMetadataSources = metadataSource &&
+    (config.metadataSources || []).includes(metadataSource) &&
+    config.metadataApiKeys?.[metadataSource]
+    ? [metadataSource]
     : [];
   const responseKey = catalogCacheKey(
     type,
@@ -536,12 +543,13 @@ async function handleCatalog(req, res, configStr) {
     return res.json({ metas: cachedMetas });
   }
 
-  if (activeMetadataSources.length > 0) {
+  if (metadataSource && activeMetadataSources.length === 0) {
+    return res.json({ metas: [] });
+  }
+
+  if (metadataSource) {
     try {
-      const outcomes = await Promise.allSettled(activeMetadataSources.map(source =>
-        stashbox.search(source, config.metadataApiKeys[source], searchQuery, 25)
-      ));
-      const scenes = outcomes.flatMap(outcome => outcome.status === 'fulfilled' ? outcome.value : []);
+      const scenes = await stashbox.search(metadataSource, config.metadataApiKeys[metadataSource], searchQuery, 25);
       const metas = buildMetadataCatalogMetas(scenes, type, req).slice(0, 50);
       cache.set(responseKey, metas, metas.length > 0 ? CATALOG_TTL : EMPTY_CATALOG_TTL);
       return res.json({ metas });
