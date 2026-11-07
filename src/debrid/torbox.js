@@ -52,14 +52,25 @@ async function checkCache(apiKey, infoHashes) {
   return cachedHashes;
 }
 
-async function getTorrentList(apiKey) {
+async function getTorrentList(apiKey, options = {}) {
   try {
-    const listRes = await client.get(`${API_BASE}/torrents/mylist`, {
+    const params = new URLSearchParams();
+    // TorBox caches mylist responses for up to 10 minutes by default. Playback
+    // must see a torrent that was just added, so always ask for fresh state.
+    params.set('bypass_cache', 'true');
+    if (options.id !== undefined && options.id !== null) params.set('id', String(options.id));
+
+    const listRes = await client.get(`${API_BASE}/torrents/mylist?${params.toString()}`, {
       headers: authHeaders(apiKey),
       timeout: 8000
     });
-    return Array.isArray(listRes.data?.data) ? listRes.data.data : [];
+    const data = listRes.data?.data;
+    if (Array.isArray(data)) return data;
+    return data && typeof data === 'object' ? [data] : [];
   } catch (err) {
+    if (err.response?.status === 401 || err.response?.status === 403) {
+      throw new DebridError('TorBox', 'API key was rejected or lacks torrent read access');
+    }
     return [];
   }
 }
@@ -81,7 +92,8 @@ function pickVideoFile(files) {
 function isReady(torrent) {
   if (!torrent) return false;
   if (torrent.download_finished === true || torrent.download_present === true) return true;
-  return /completed|uploaded|finished/i.test(String(torrent.download_state || ''));
+  // TorBox's documented Download Ready state for cached torrents is `cached`.
+  return /cached|completed|uploaded|finished/i.test(String(torrent.download_state || ''));
 }
 
 /**
@@ -111,16 +123,27 @@ async function resolveStream(apiKey, infoHash) {
         timeout: 8000
       });
 
-      torrentId = createRes.data?.data?.torrent_id;
+      const created = createRes.data?.data;
+      if (createRes.data?.success === false) {
+        throw new Error(createRes.data?.detail || createRes.data?.error || 'TorBox rejected the torrent');
+      }
+      torrentId = created?.torrent_id || created?.id || null;
     } catch (err) {
-      // The torrent may already exist; fall through to the list lookup.
+      // The torrent may already exist; refresh the list before failing.
       console.log('[TorBox] createtorrent info:', err.response?.data?.detail || err.message);
+      list = await getTorrentList(apiKey);
+      torrent = findTorrent(list, hash, null);
+      torrentId = torrent?.id || null;
+      if (!torrentId) {
+        const detail = err.response?.data?.detail || err.response?.data?.error || err.message;
+        throw new DebridError('TorBox', `failed to add torrent (${String(detail).slice(0, 180)})`);
+      }
     }
   }
 
   // 3. Poll until TorBox reports the download as finished/cached.
   const ready = await pollUntil(async () => {
-    list = await getTorrentList(apiKey);
+    list = await getTorrentList(apiKey, { id: torrentId });
     torrent = findTorrent(list, hash, torrentId);
     if (!torrent) return null;
 

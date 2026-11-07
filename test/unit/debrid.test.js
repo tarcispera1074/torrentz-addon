@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { installAdapter } = require('../helpers/mockHttp');
 const realdebrid = require('../../src/debrid/realdebrid');
+const torbox = require('../../src/debrid/torbox');
 const { DebridPendingError } = require('../../src/debrid/errors');
 
 const API_KEY = 'test-key';
@@ -72,5 +73,50 @@ test('Real-Debrid throws a pending error while the torrent is processing', async
     } else {
       process.env.DEBRID_WAIT_MS = previousBudget;
     }
+  }
+});
+
+test('TorBox resolves a just-added cached torrent using fresh list data and its cached state', async () => {
+  const calls = [];
+  const restore = installAdapter(config => {
+    const url = new URL(String(config.url));
+    calls.push(url);
+
+    if (url.pathname.endsWith('/torrents/mylist')) {
+      assert.equal(url.searchParams.get('bypass_cache'), 'true');
+      if (!url.searchParams.has('id')) return { data: { success: true, data: [] } };
+      assert.equal(url.searchParams.get('id'), '99');
+      return {
+        data: {
+          success: true,
+          data: {
+            id: 99,
+            hash: HASH,
+            download_state: 'cached',
+            files: [{ id: 7, name: 'Example.Movie.1080p.mkv', size: 1000 }]
+          }
+        }
+      };
+    }
+
+    if (url.pathname.endsWith('/torrents/createtorrent')) {
+      return { data: { success: true, data: { torrent_id: 99 } } };
+    }
+
+    if (url.pathname.endsWith('/torrents/requestdl')) {
+      assert.equal(url.searchParams.get('torrent_id'), '99');
+      assert.equal(url.searchParams.get('file_id'), '7');
+      return { data: { success: true, data: 'https://cdn.torbox.example/video.mkv' } };
+    }
+
+    throw new Error(`Unexpected URL in test: ${url}`);
+  });
+
+  try {
+    const streamUrl = await torbox.resolveStream(API_KEY, HASH);
+    assert.equal(streamUrl, 'https://cdn.torbox.example/video.mkv');
+    assert.equal(calls.filter(url => url.pathname.endsWith('/torrents/mylist')).length, 2);
+  } finally {
+    restore();
   }
 });
