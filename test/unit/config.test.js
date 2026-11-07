@@ -13,6 +13,8 @@ test('URL-safe base64 round-trips every config field', () => {
     providers: ['tpb', '1337x'],
     debridProvider: 'torbox',
     debridApiKey: 'secret-token',
+    metadataSources: ['tpdb', 'javstash'],
+    metadataApiKeys: { tpdb: 'tpdb-secret', javstash: 'javstash-secret', invalid: 'ignored' },
     showP2PFallback: false,
     maxStreamsPerResolution: 8,
     resolutions: ['1080p', '720p'],
@@ -25,6 +27,8 @@ test('URL-safe base64 round-trips every config field', () => {
   assert.deepEqual(decoded.providers, ['tpb', '1337x']);
   assert.equal(decoded.debridProvider, 'torbox');
   assert.equal(decoded.debridApiKey, 'secret-token');
+  assert.deepEqual(decoded.metadataSources, ['tpdb', 'javstash']);
+  assert.deepEqual(decoded.metadataApiKeys, { tpdb: 'tpdb-secret', javstash: 'javstash-secret' });
   assert.equal(decoded.showP2PFallback, false);
   assert.equal(decoded.maxStreamsPerResolution, 8);
   assert.deepEqual(decoded.resolutions, ['1080p', '720p']);
@@ -86,4 +90,15 @@ test('sanitizeConfig clamps numeric options and normalizes resolutions', () => {
 test('provider aliases resolve to canonical ids', () => {
   const decoded = decodeConfig('providers=thepiratebay,1337x');
   assert.deepEqual(decoded.providers, ['tpb', '1337x']);
+});
+
+test('metadata sources are allowlisted and API keys are trimmed and bounded', () => {
+  const clean = sanitizeConfig({
+    metadataSources: ['TPDB', 'stashdb', 'unsupported', 'tpdb'],
+    metadataApiKeys: { tpdb: `  ${'x'.repeat(600)}  `, unknown: 'nope' }
+  });
+
+  assert.deepEqual(clean.metadataSources, ['tpdb', 'stashdb']);
+  assert.equal(clean.metadataApiKeys.tpdb.length, 512);
+  assert.equal(clean.metadataApiKeys.unknown, undefined);
 });

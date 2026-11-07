@@ -1,8 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const { createHash } = require('node:crypto');
 const { decodeConfig, DEFAULT_CONFIG } = require('./config');
 const { getMetadata, searchCatalog, normalizeTitle } = require('./metadata/cinemeta');
+const stashbox = require('./metadata/stashbox');
 const scrapers = require('./scrapers');
 const debrid = require('./debrid');
 const {
@@ -71,8 +73,13 @@ function decodeGroupId(value) {
   }
 }
 
-function catalogCacheKey(type, id, query, providers) {
-  return `catalog-response:${type}:${id}:${normalizeProviders(providers)}:${String(query).trim().toLowerCase()}`;
+function catalogCacheKey(type, id, query, providers, metadataSources = [], metadataApiKeys = {}) {
+  const metadataSignature = [...metadataSources]
+    .filter(source => metadataApiKeys[source])
+    .sort()
+    .map(source => `${source}:${createHash('sha256').update(metadataApiKeys[source]).digest('hex').slice(0, 12)}`)
+    .join(',');
+  return `catalog-response:${type}:${id}:${normalizeProviders(providers)}:${metadataSignature}:${String(query).trim().toLowerCase()}`;
 }
 
 function groupKeyParts(key) {
@@ -88,6 +95,107 @@ function groupKeyLabel(key) {
     label += ` S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
   }
   return label || 'Torrent group';
+}
+
+const METADATA_SCENE_ID_RE = /^(tpdb|stashdb|javstash|pmvstash|fansdb)-scene:(.+)$/;
+
+function parseMetadataSceneId(id) {
+  const match = String(id || '').match(METADATA_SCENE_ID_RE);
+  if (!match) return null;
+  try {
+    return { source: match[1], sceneId: decodeURIComponent(match[2]) };
+  } catch (err) {
+    return { source: match[1], sceneId: match[2] };
+  }
+}
+
+function metadataSceneId(scene) {
+  return `${scene.provider}-scene:${encodeURIComponent(scene.id)}`;
+}
+
+function metadataSceneCacheKey(scene) {
+  return `metadata-scene-record:${scene.provider}:${scene.id}`;
+}
+
+function sceneDedupeKey(scene) {
+  const code = normalizeTitle(scene.code);
+  if (code) return `code:${code}`;
+  const year = extractYear(scene.date);
+  const title = normalizeTitle(scene.title);
+  const studio = normalizeTitle(scene.studio);
+  const performers = [...(scene.performers || [])].map(normalizeTitle).sort().join(',');
+  return `${title}|${year}|${studio}|${performers}`;
+}
+
+function sceneDescription(scene, sources = [scene.providerName]) {
+  const parts = [`Metadata: ${[...new Set(sources)].join(', ')}`];
+  if (scene.studio) parts.push(`Studio: ${scene.studio}`);
+  if (scene.performers?.length) parts.push(`Cast: ${scene.performers.slice(0, 6).join(', ')}`);
+  if (scene.code) parts.push(`Code: ${scene.code}`);
+  if (scene.date) parts.push(`Date: ${scene.date}`);
+  return parts.join(' | ');
+}
+
+function buildMetadataCatalogMetas(scenes, type, req) {
+  const groups = new Map();
+  for (const scene of scenes) {
+    const key = sceneDedupeKey(scene);
+    if (!groups.has(key)) groups.set(key, { primary: scene, scenes: [] });
+    const group = groups.get(key);
+    group.scenes.push(scene);
+    // Prefer ThePornDB as the broad primary record when sources describe the
+    // same scene; retain all provider records as aliases for restart recovery.
+    if (scene.provider === 'tpdb') group.primary = scene;
+  }
+
+  return [...groups.values()].map(({ primary, scenes: matches }) => {
+    const id = metadataSceneId(primary);
+    const sources = matches.map(scene => scene.providerName);
+    for (const scene of matches) {
+      cache.set(metadataSceneCacheKey(scene), scene, CATALOG_TORRENT_TTL);
+    }
+    cache.set(`metadata-scene-group:${id}`, matches, CATALOG_TORRENT_TTL);
+
+    const meta = {
+      id,
+      type: type || 'movie',
+      name: primary.title,
+      poster: primary.poster || matches.find(scene => scene.poster)?.poster || placeholderPosterUrl(req, primary.title),
+      posterShape: 'poster',
+      description: sceneDescription(primary, sources)
+    };
+    if (primary.date) meta.releaseInfo = primary.date.slice(0, 10);
+    return meta;
+  });
+}
+
+async function getMetadataSceneRecords(parsedId, config) {
+  const groupKey = `metadata-scene-group:${metadataSceneId({ provider: parsedId.source, id: parsedId.sceneId })}`;
+  const grouped = cache.get(groupKey);
+  if (Array.isArray(grouped) && grouped.length > 0) return grouped;
+
+  const sourceConfig = stashbox.SOURCES[parsedId.source];
+  const token = config.metadataApiKeys?.[parsedId.source];
+  if (!sourceConfig || !token) return [];
+
+  const scene = await stashbox.getScene(parsedId.source, token, parsedId.sceneId);
+  if (!scene) return [];
+  cache.set(metadataSceneCacheKey(scene), scene, CATALOG_TORRENT_TTL);
+  cache.set(groupKey, [scene], CATALOG_TORRENT_TTL);
+  return [scene];
+}
+
+function metadataTorrentQuery(scene) {
+  if (scene.code) return scene.code.slice(0, 120);
+  const title = String(scene.title || '').trim();
+  const performer = scene.performers?.[0];
+  return [title, performer].filter(Boolean).join(' ').slice(0, 160);
+}
+
+function addTorrentSourceBadge(stream) {
+  const source = String(stream.source || '').replace(/[\[\]\r\n]/g, '').slice(0, 40);
+  if (source) stream.name = stream.name.replace(/^([^\s]+)\s+/, `$1 [${source}] `);
+  return stream;
 }
 
 /**
@@ -375,10 +483,35 @@ async function handleCatalog(req, res, configStr) {
   console.log(`[Catalog Search] Querying torrents for: "${searchQuery}" (${type})`);
 
   const isAdult = type === 'other' || /xxx/i.test(id);
-  const responseKey = catalogCacheKey(type, id, searchQuery, config.providers);
+  const activeMetadataSources = id === 'torrentz_xxx'
+    ? (config.metadataSources || []).filter(source => stashbox.SOURCES[source] && config.metadataApiKeys?.[source])
+    : [];
+  const responseKey = catalogCacheKey(
+    type,
+    id,
+    searchQuery,
+    config.providers,
+    activeMetadataSources,
+    config.metadataApiKeys
+  );
   const cachedMetas = cache.get(responseKey);
   if (cachedMetas) {
     return res.json({ metas: cachedMetas });
+  }
+
+  if (activeMetadataSources.length > 0) {
+    try {
+      const outcomes = await Promise.allSettled(activeMetadataSources.map(source =>
+        stashbox.search(source, config.metadataApiKeys[source], searchQuery, 25)
+      ));
+      const scenes = outcomes.flatMap(outcome => outcome.status === 'fulfilled' ? outcome.value : []);
+      const metas = buildMetadataCatalogMetas(scenes, type, req).slice(0, 50);
+      cache.set(responseKey, metas, metas.length > 0 ? CATALOG_TTL : EMPTY_CATALOG_TTL);
+      return res.json({ metas });
+    } catch (err) {
+      console.error('[Metadata Catalog Error]', err.message);
+      return res.json({ metas: [] });
+    }
   }
 
   try {
@@ -406,6 +539,26 @@ app.get('/:config/catalog/:type/:id/:extra.json', (req, res) => handleCatalog(re
 // 4. Meta handler (for items clicked from the search results)
 async function handleMeta(req, res, configStr) {
   const { type, id } = req.params;
+  const metadataId = parseMetadataSceneId(id);
+
+  if (metadataId) {
+    const config = decodeConfig(configStr);
+    const records = await getMetadataSceneRecords(metadataId, config);
+    const scene = records.find(record => record.provider === metadataId.source) || records[0];
+    if (!scene) return res.json({ meta: null });
+
+    return res.json({
+      meta: {
+        id,
+        type: type || 'movie',
+        name: scene.title,
+        poster: scene.poster || placeholderPosterUrl(req, scene.title),
+        posterShape: 'poster',
+        description: sceneDescription(scene, records.map(record => record.providerName)),
+        ...(scene.date ? { releaseInfo: scene.date.slice(0, 10) } : {})
+      }
+    });
+  }
 
   if (id.startsWith('torrentz-group:')) {
     const groupId = id.replace('torrentz-group:', '');
@@ -463,13 +616,32 @@ async function handleStreams(req, res, configStr) {
 
   try {
     let torrents = [];
+    let metadataScene = null;
 
-    // Case A: Stream requested from a grouped catalog item.
-    if (id.startsWith('torrentz-group:')) {
+    // Case A: Stream requested from a Stash-Box catalog scene.
+    const metadataId = parseMetadataSceneId(id);
+    if (metadataId) {
+      const records = await getMetadataSceneRecords(metadataId, config);
+      metadataScene = records.find(record => record.provider === metadataId.source) || records[0] || null;
+      if (!metadataScene) return res.json({ streams: [] });
+
+      const searchQuery = metadataTorrentQuery(metadataScene);
+      if (!searchQuery) return res.json({ streams: [] });
+      console.log(`[Stream] Searching torrent providers for metadata scene "${metadataScene.title}"`);
+
+      const cacheKey = streamsCacheKey('movie', `scene:${metadataScene.provider}:${searchQuery}`, config.providers);
+      torrents = cache.get(cacheKey);
+      if (!torrents) {
+        torrents = await scrapers.searchAll(searchQuery, config.providers);
+        cache.set(cacheKey, torrents, STREAM_TTL);
+      }
+    }
+    // Case B: Stream requested from a grouped torrent catalog item.
+    else if (id.startsWith('torrentz-group:')) {
       const groupId = id.replace('torrentz-group:', '');
       torrents = await getGroupTorrents(groupId, config);
     }
-    // Case B: Stream requested from a single catalog item (legacy IDs).
+    // Case C: Stream requested from a single catalog item (legacy IDs).
     else if (id.startsWith('torrentz:')) {
       const hash = id.replace('torrentz:', '').toLowerCase();
       const cached = cache.get(`torrent:${hash}`);
@@ -481,7 +653,7 @@ async function handleStreams(req, res, configStr) {
         source: cached ? cached.source : 'Indexer'
       }];
     }
-    // Case C: Stream requested from IMDb/Cinemeta item (tt...)
+    // Case D: Stream requested from IMDb/Cinemeta item (tt...)
     else {
       const meta = await getMetadata(type, id);
       if (!meta || !meta.name) {
@@ -544,7 +716,7 @@ async function handleStreams(req, res, configStr) {
         sizeBytes: torrent.sizeBytes,
         seeders: torrent.seeders,
         source: torrent.source,
-        displayTitle: titleInfo.label,
+        displayTitle: metadataScene?.title || titleInfo.label,
         titleInfo
       };
 
@@ -558,12 +730,17 @@ async function handleStreams(req, res, configStr) {
             debridProvider: config.debridProvider.toUpperCase()
           });
           formatted.url = `${protocol}://${host}/playback/${encodeURIComponent(configStr)}/${torrent.infoHash}`;
+          if (metadataScene) addTorrentSourceBadge(formatted);
           formattedStreams.push(formatted);
         } else if (config.showP2PFallback) {
-          formattedStreams.push(formatStream(base));
+          const formatted = formatStream(base);
+          if (metadataScene) addTorrentSourceBadge(formatted);
+          formattedStreams.push(formatted);
         }
       } else {
-        formattedStreams.push(formatStream(base));
+        const formatted = formatStream(base);
+        if (metadataScene) addTorrentSourceBadge(formatted);
+        formattedStreams.push(formatted);
       }
     }
 

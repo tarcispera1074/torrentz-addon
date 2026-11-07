@@ -1,13 +1,14 @@
 const { DEFAULT_CONFIG } = require('./config');
 const debrid = require('./debrid');
 
-const ADDON_VERSION = '1.1.0';
+const ADDON_VERSION = '1.2.0';
 
 /**
  * Manifest generator supporting split modes: 'movies', 'xxx', 'all'
  */
 function createManifest(config = DEFAULT_CONFIG) {
   const mode = config.mode || 'all';
+  const hasMetadataCatalog = (config.metadataSources || []).some(source => config.metadataApiKeys?.[source]);
   let id = 'community.torrentz.addon';
   let name = 'Torrentz';
   let description = 'High-speed torrent scraper for ThePirateBay, 1337x, LimeTorrents, and RARBG';
@@ -42,7 +43,7 @@ function createManifest(config = DEFAULT_CONFIG) {
       {
         type: 'movie',
         id: 'torrentz_xxx',
-        name: 'Torrentz XXX',
+        name: hasMetadataCatalog ? 'Adult Scene Catalog' : 'Torrentz XXX',
         extra: [{ name: 'search', isRequired: false }]
       }
     ];
@@ -64,7 +65,13 @@ function createManifest(config = DEFAULT_CONFIG) {
         id: 'torrentz_series',
         name: 'Torrentz Series',
         extra: [{ name: 'search', isRequired: false }]
-      }
+      },
+      ...(hasMetadataCatalog ? [{
+        type: 'movie',
+        id: 'torrentz_xxx',
+        name: 'Adult Scenes',
+        extra: [{ name: 'search', isRequired: false }]
+      }] : [])
     ];
   }
 
@@ -80,7 +87,16 @@ function createManifest(config = DEFAULT_CONFIG) {
     description,
     resources: ['catalog', 'meta', 'stream'],
     types,
-    idPrefixes: ['tt', 'torrentz:', 'torrentz-group:'],
+    idPrefixes: [
+      'tt',
+      'torrentz:',
+      'torrentz-group:',
+      'tpdb-scene:',
+      'stashdb-scene:',
+      'javstash-scene:',
+      'pmvstash-scene:',
+      'fansdb-scene:'
+    ],
     catalogs,
     behaviorHints: {
       configurable: true,

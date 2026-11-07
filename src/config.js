@@ -6,6 +6,8 @@ const { normalizeResolution, SUPPORTED_RESOLUTIONS } = require('./utils/parser')
 const DEFAULT_CONFIG = {
   mode: 'all', // 'movies', 'xxx', 'all'
   providers: ['tpb', '1337x', 'limetorrents', 'rargb'],
+  metadataSources: [],
+  metadataApiKeys: {},
   debridProvider: null, // 'realdebrid', 'alldebrid', 'premiumize', 'torbox', 'debridlink' or null
   debridApiKey: '',
   showP2PFallback: true,
@@ -15,6 +17,7 @@ const DEFAULT_CONFIG = {
 };
 
 const MODES = new Set(['all', 'movies', 'xxx', 'other']);
+const METADATA_SOURCES = new Set(['tpdb', 'stashdb', 'javstash', 'pmvstash', 'fansdb']);
 
 const PROVIDER_ALIASES = {
   tpb: 'tpb',
@@ -53,7 +56,9 @@ const ALLOWED_KEYS = new Set([
   'showP2PFallback',
   'maxStreamsPerResolution',
   'resolutions',
-  'groupByTitle'
+  'groupByTitle',
+  'metadataSources',
+  'metadataApiKeys'
 ]);
 
 function safeDecode(value) {
@@ -109,6 +114,29 @@ function sanitizeResolutions(value, fallback) {
   return resolutions.length > 0 ? resolutions : [...fallback];
 }
 
+function sanitizeMetadataSources(value) {
+  const list = Array.isArray(value)
+    ? value
+    : (typeof value === 'string' ? value.split(',') : []);
+  return [...new Set(list
+    .filter(item => typeof item === 'string')
+    .map(item => item.trim().toLowerCase())
+    .filter(item => METADATA_SOURCES.has(item)))];
+}
+
+function sanitizeMetadataApiKeys(value) {
+  const keys = {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return keys;
+
+  for (const source of METADATA_SOURCES) {
+    const token = value[source];
+    if (typeof token === 'string' && token.trim()) {
+      keys[source] = token.trim().slice(0, 512);
+    }
+  }
+  return keys;
+}
+
 /**
  * Keep only known keys and coerce every value to the expected type.
  * This also blocks prototype-pollution style keys from user supplied config.
@@ -130,6 +158,14 @@ function sanitizeConfig(input = {}) {
 
   if (out.providers !== undefined) {
     out.providers = sanitizeProviders(out.providers, DEFAULT_CONFIG.providers);
+  }
+
+  if (out.metadataSources !== undefined) {
+    out.metadataSources = sanitizeMetadataSources(out.metadataSources);
+  }
+
+  if (out.metadataApiKeys !== undefined) {
+    out.metadataApiKeys = sanitizeMetadataApiKeys(out.metadataApiKeys);
   }
 
   if (out.debridProvider !== undefined) {
@@ -224,6 +260,14 @@ function decodeConfig(configStr) {
         overrides.maxStreamsPerResolution = v;
       } else if (key === 'resolutions') {
         overrides.resolutions = v.split(',').map(s => s.trim()).filter(Boolean);
+      } else if (key === 'metadatasources') {
+        overrides.metadataSources = v.split(',').map(s => s.trim()).filter(Boolean);
+      } else if (key === 'metadataapikeys') {
+        try {
+          overrides.metadataApiKeys = JSON.parse(v);
+        } catch (err) {
+          overrides.metadataApiKeys = {};
+        }
       }
     }
   } catch (err) {

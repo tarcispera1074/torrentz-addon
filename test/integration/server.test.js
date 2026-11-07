@@ -7,6 +7,7 @@ const { DEFAULT_CONFIG, encodeConfig } = require('../../src/config');
 const { streamsCacheKey } = require('../../src/utils/cacheKeys');
 const scrapers = require('../../src/scrapers');
 const debrid = require('../../src/debrid');
+const stashbox = require('../../src/metadata/stashbox');
 
 const HASH_1080 = 'a'.repeat(40);
 const HASH_720 = 'b'.repeat(40);
@@ -74,10 +75,13 @@ test('serves the dynamic manifest with the shared version', async () => {
   const { status, body } = await getJson('/manifest.json');
 
   assert.equal(status, 200);
-  assert.equal(body.version, '1.1.0');
+  assert.equal(body.version, '1.2.0');
   assert.equal(body.id, 'community.torrentz.addon');
   assert.deepEqual(body.resources, ['catalog', 'meta', 'stream']);
   assert.ok(body.idPrefixes.includes('torrentz-group:'));
+  for (const prefix of ['tpdb-scene:', 'stashdb-scene:', 'javstash-scene:', 'pmvstash-scene:', 'fansdb-scene:']) {
+    assert.ok(body.idPrefixes.includes(prefix));
+  }
 });
 
 test('configuration page exposes both provider actions and the manifest URL', async () => {
@@ -88,6 +92,25 @@ test('configuration page exposes both provider actions and the manifest URL', as
   assert.match(html, /Select all/);
   assert.match(html, /Deselect all/);
   assert.match(html, /id="manifestUrl"/);
+  for (const source of ['tpdb', 'stashdb', 'javstash', 'pmvstash', 'fansdb']) {
+    assert.match(html, new RegExp(`metadata-key-${source}`));
+    assert.match(html, new RegExp(`metadata-source-${source}`));
+  }
+  assert.match(html, /Adult Metadata Catalogs/);
+  assert.match(html, /Base64 is not encryption/);
+});
+
+test('configured Stash-Box sources add the adult metadata catalog to the manifest', async () => {
+  const config = encodeConfig({
+    metadataSources: ['tpdb', 'stashdb'],
+    metadataApiKeys: { tpdb: 'read-token', stashdb: 'read-token-2' }
+  });
+  const { status, body } = await getJson(`/${config}/manifest.json`);
+
+  assert.equal(status, 200);
+  assert.ok(body.catalogs.some(catalog => catalog.id === 'torrentz_xxx' && catalog.name === 'Adult Scenes'));
+  assert.ok(body.idPrefixes.includes('tpdb-scene:'));
+  assert.ok(body.idPrefixes.includes('fansdb-scene:'));
 });
 
 test('groups same-title releases and orders them by quality', async () => {
@@ -292,5 +315,70 @@ test('grouped IDs still resolve after an in-memory cache reset', async () => {
     assert.deepEqual(body.streams.map(stream => stream.name), ['[P2P] 1080p', '[P2P] 720p']);
   } finally {
     scrapers.searchAll = original;
+  }
+});
+
+test('metadata search returns merged scene metas and routes matched torrents with source labels', async () => {
+  const originalSearch = stashbox.search;
+  const originalScrape = scrapers.searchAll;
+  const query = 'Scene Integration Test 2025';
+  const config = encodeConfig({
+    providers: ['tpb', '1337x'],
+    metadataSources: ['tpdb', 'stashdb'],
+    metadataApiKeys: { tpdb: 'tpdb-test-key', stashdb: 'stashdb-test-key' }
+  });
+
+  stashbox.search = async source => ([{
+    id: `${source}-scene-42`,
+    provider: source,
+    providerName: source === 'tpdb' ? 'ThePornDB' : 'StashDB',
+    title: 'Scene Integration Test',
+    date: '2025-02-03',
+    code: 'SIT-042',
+    studio: 'Example Studio',
+    performers: ['Example Performer'],
+    poster: source === 'tpdb' ? 'https://images.example/scene.jpg' : 'https://images.example/duplicate.jpg',
+    urls: []
+  }]);
+  scrapers.searchAll = async searchQuery => {
+    assert.equal(searchQuery, 'SIT-042');
+    return [
+      {
+        rawTitle: 'SIT-042.1080p.WEB-DL',
+        infoHash: 'k'.repeat(40),
+        sizeBytes: 2 * 1024 * 1024 * 1024,
+        seeders: 30,
+        source: 'ThePirateBay'
+      },
+      {
+        rawTitle: 'SIT-042.720p.WEB-DL',
+        infoHash: 'l'.repeat(40),
+        sizeBytes: 800 * 1024 * 1024,
+        seeders: 20,
+        source: '1337x'
+      }
+    ];
+  };
+
+  try {
+    const catalog = await getJson(`/${config}/catalog/movie/torrentz_xxx/search=${encodeURIComponent(query)}.json`);
+    assert.equal(catalog.status, 200);
+    assert.equal(catalog.body.metas.length, 1, 'duplicate scene across providers should merge');
+    const [meta] = catalog.body.metas;
+    assert.match(meta.id, /^tpdb-scene:/);
+    assert.equal(meta.poster, 'https://images.example/scene.jpg');
+    assert.match(meta.description, /ThePornDB, StashDB/);
+
+    const detail = await getJson(`/${config}/meta/movie/${encodeURIComponent(meta.id)}.json`);
+    assert.equal(detail.body.meta.name, 'Scene Integration Test');
+
+    const streams = await getJson(`/${config}/stream/movie/${encodeURIComponent(meta.id)}.json`);
+    assert.equal(streams.body.streams.length, 2);
+    assert.match(streams.body.streams[0].name, /\[ThePirateBay\]/);
+    assert.match(streams.body.streams[1].name, /\[1337x\]/);
+    assert.ok(streams.body.streams.every(stream => stream.title.startsWith('Scene Integration Test')));
+  } finally {
+    stashbox.search = originalSearch;
+    scrapers.searchAll = originalScrape;
   }
 });

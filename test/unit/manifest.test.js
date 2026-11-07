@@ -30,6 +30,17 @@ test('movies mode exposes movie and series catalogs only', () => {
   assert.deepEqual(manifest.catalogs.map(c => c.type).sort(), ['movie', 'series']);
 });
 
+test('all mode adds the metadata catalog only when an enabled source has a key', () => {
+  const manifest = createManifest({
+    ...DEFAULT_CONFIG,
+    metadataSources: ['tpdb', 'stashdb'],
+    metadataApiKeys: { tpdb: 'token' }
+  });
+
+  assert.ok(manifest.catalogs.some(catalog => catalog.id === 'torrentz_xxx' && catalog.name === 'Adult Scenes'));
+  assert.ok(manifest.idPrefixes.includes('tpdb-scene:'));
+});
+
 test('xxx mode exposes a single movie catalog', () => {
   const manifest = createManifest({ ...DEFAULT_CONFIG, mode: 'xxx' });
 

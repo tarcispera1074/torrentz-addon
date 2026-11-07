@@ -160,6 +160,59 @@
       background: rgba(108, 92, 231, 0.2);
     }
 
+    .metadata-source {
+      border-top: 1px solid var(--border);
+      padding: 1rem 0;
+    }
+
+    .metadata-source:first-of-type {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .metadata-source-title {
+      font-size: 0.94rem;
+      font-weight: 600;
+      margin-bottom: 0.55rem;
+    }
+
+    .metadata-source .input-group {
+      margin-top: 0;
+    }
+
+    .metadata-key-help {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      line-height: 1.55;
+      margin-top: 0.45rem;
+    }
+
+    .metadata-key-help a {
+      color: #ff668c;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .metadata-key-help a:hover {
+      text-decoration: underline;
+    }
+
+    .metadata-source-toggle {
+      margin-top: 0.65rem;
+      background: transparent;
+    }
+
+    .metadata-security-note {
+      background: rgba(255, 180, 70, 0.08);
+      border: 1px solid rgba(255, 180, 70, 0.25);
+      border-radius: 8px;
+      color: #e0bd8b;
+      font-size: 0.78rem;
+      line-height: 1.5;
+      padding: 0.7rem 0.8rem;
+      margin-top: 0.8rem;
+    }
+
     .input-group {
       margin-top: 0.75rem;
     }
@@ -274,6 +327,82 @@
       </div>
       <div class="helper-text" id="modeDescription">
         Install both <strong>Movies & TV</strong> and <strong>XXX & Adult</strong> separately in Nuvio to keep mainstream media and adult search cleanly separated!
+      </div>
+    </div>
+
+    <!-- Adult Metadata Sources -->
+    <div class="section" id="metadataSourcesSection">
+      <div class="section-title">Adult Metadata Catalogs (Stash-Box)</div>
+      <div class="helper-text" style="margin-bottom: 0.8rem;">
+        Add read-only API keys to search scenes and show catalog posters. Enabled sources are queried together and duplicate records are combined.
+      </div>
+      <div class="provider-actions" aria-label="Metadata source selection actions">
+        <button type="button" class="provider-action" onclick="setAllMetadataSources(true)">Select all</button>
+        <button type="button" class="provider-action" onclick="setAllMetadataSources(false)">Deselect all</button>
+      </div>
+
+      <div class="metadata-source">
+        <div class="metadata-source-title">ThePornDB API token</div>
+        <div class="input-group">
+          <input type="password" id="metadata-key-tpdb" autocomplete="off" placeholder="Paste your API token here">
+          <div class="metadata-key-help">
+            Free account required. Sign up at <a href="https://theporndb.net/register" target="_blank" rel="noopener">theporndb.net</a>, then go to Profile → API Tokens. Use read-only access. Set GraphQL Manager → Scene Type to Any for movies and JAV.
+            <br><a href="https://api.theporndb.net/docs" target="_blank" rel="noopener">API documentation</a>
+          </div>
+        </div>
+        <label class="checkbox-label metadata-source-toggle"><input type="checkbox" id="metadata-source-tpdb"><span>Enable ThePornDB catalog</span></label>
+      </div>
+
+      <div class="metadata-source">
+        <div class="metadata-source-title">StashDB API key</div>
+        <div class="input-group">
+          <input type="password" id="metadata-key-stashdb" autocomplete="off" placeholder="Paste your StashDB API key here">
+          <div class="metadata-key-help">
+            Account and invite may be required. Register at <a href="https://stashdb.org/" target="_blank" rel="noopener">stashdb.org</a>, then open your profile to copy the API key. Read access is enough.
+            <br><a href="https://guidelines.stashdb.org/docs/faq_getting-started/stashdb/accessing-stashdb/" target="_blank" rel="noopener">Access instructions</a>
+          </div>
+        </div>
+        <label class="checkbox-label metadata-source-toggle"><input type="checkbox" id="metadata-source-stashdb"><span>Enable StashDB catalog</span></label>
+      </div>
+
+      <div class="metadata-source">
+        <div class="metadata-source-title">JAVStash API key</div>
+        <div class="input-group">
+          <input type="password" id="metadata-key-javstash" autocomplete="off" placeholder="Paste your JAVStash API key here">
+          <div class="metadata-key-help">
+            JAV-focused Stash-Box. Join the <a href="https://discord.gg/jq2anJbxDb" target="_blank" rel="noopener">JAVStash community</a> for account/API access, then copy your key from your profile.
+            <br><a href="https://javstash.org/" target="_blank" rel="noopener">JAVStash website</a>
+          </div>
+        </div>
+        <label class="checkbox-label metadata-source-toggle"><input type="checkbox" id="metadata-source-javstash"><span>Enable JAVStash catalog</span></label>
+      </div>
+
+      <div class="metadata-source">
+        <div class="metadata-source-title">PMV Stash API key</div>
+        <div class="input-group">
+          <input type="password" id="metadata-key-pmvstash" autocomplete="off" placeholder="Paste your PMV Stash API key here">
+          <div class="metadata-key-help">
+            PMV Stash access uses a community invite. Check <a href="https://blog.pmvstash.org/" target="_blank" rel="noopener">PMV Stash guidelines/invites</a>, then copy your key from your profile.
+            <br><a href="https://pmvstash.org/" target="_blank" rel="noopener">PMV Stash website</a>
+          </div>
+        </div>
+        <label class="checkbox-label metadata-source-toggle"><input type="checkbox" id="metadata-source-pmvstash"><span>Enable PMV Stash catalog</span></label>
+      </div>
+
+      <div class="metadata-source">
+        <div class="metadata-source-title">FansDB API key</div>
+        <div class="input-group">
+          <input type="password" id="metadata-key-fansdb" autocomplete="off" placeholder="Paste your FansDB API key here">
+          <div class="metadata-key-help">
+            Invite/application required. Apply through the <a href="https://docs.fansdb.cc/" target="_blank" rel="noopener">FansDB documentation</a>; after approval, copy the API key from your profile.
+            <br><a href="https://fansdb.cc/" target="_blank" rel="noopener">FansDB website</a>
+          </div>
+        </div>
+        <label class="checkbox-label metadata-source-toggle"><input type="checkbox" id="metadata-source-fansdb"><span>Enable FansDB catalog</span></label>
+      </div>
+
+      <div class="metadata-security-note">
+        API keys are included in the generated addon URL as Base64-encoded configuration; Base64 is not encryption. Only use this with an addon server you trust, and never share a generated URL containing your keys.
       </div>
     </div>
 
@@ -455,6 +584,13 @@
       updateInstallLink();
     }
 
+    function setAllMetadataSources(selected) {
+      document.querySelectorAll('input[id^="metadata-source-"]').forEach(input => {
+        input.checked = selected;
+      });
+      updateInstallLink();
+    }
+
     function buildConfigObject() {
       const providers = [];
       ['tpb', '1337x', 'limetorrents', 'rargb', 'torlock', 'pussytorrents', 'yourbittorrent2', 'bootytape', 'mypornclub', 'lovetorrent', 'xxxclub', 'pornrips', 'sukebei', 'tokyotosho', 'ffjav'].forEach(p => {
@@ -469,6 +605,17 @@
       const maxStreams = parseInt(document.getElementById('maxStreams').value, 10) || 5;
       const groupByTitle = document.getElementById('groupByTitle').checked;
 
+      const metadataSources = [];
+      const metadataApiKeys = {};
+      ['tpdb', 'stashdb', 'javstash', 'pmvstash', 'fansdb'].forEach(source => {
+        const apiKey = document.getElementById(`metadata-key-${source}`).value.trim();
+        const enabled = document.getElementById(`metadata-source-${source}`).checked;
+        if (enabled && apiKey) {
+          metadataSources.push(source);
+          metadataApiKeys[source] = apiKey;
+        }
+      });
+
       const resolutions = [];
       ['2160p', '1080p', '720p', '480p'].forEach(r => {
         if (document.getElementById(`res-${r}`).checked) {
@@ -479,6 +626,8 @@
       return {
         mode: currentMode,
         providers,
+        metadataSources,
+        metadataApiKeys,
         debridProvider: debridProvider === 'none' ? null : debridProvider,
         debridApiKey: debridProvider === 'none' ? '' : debridApiKey,
         showP2PFallback,
