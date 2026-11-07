@@ -208,15 +208,27 @@ function metadataTorrentQueries(scene) {
 
   if (title) queries.push({ query: title.slice(0, 160), matchKind: 'title' });
   if (performer) queries.push({ query: String(performer).slice(0, 120), matchKind: 'performer' });
+  else {
+    // Some metadata records omit the cast list even though the scene title
+    // starts with the performer's name (e.g. "Blair Williams ..."). Try that
+    // short prefix before giving up on the catalog item.
+    const titlePrefix = title.split(/\s+/).slice(0, 2).join(' ');
+    if (titlePrefix && normalizeTitle(titlePrefix).split(' ').length === 2) {
+      queries.push({ query: titlePrefix.slice(0, 80), matchKind: 'title-keyword' });
+    }
+  }
   return [...new Map(queries.map(item => [item.query.toLowerCase(), item])).values()];
 }
 
 function addTorrentSourceBadge(stream, matchKind = 'title') {
   const source = String(stream.source || '').replace(/[\[\]\r\n]/g, '').slice(0, 40);
-  const badges = [source, ...(matchKind === 'performer' ? ['Performer match'] : [])].filter(Boolean);
+  const matchBadge = matchKind === 'performer'
+    ? 'Performer match'
+    : (matchKind === 'title-keyword' ? 'Title keyword match' : null);
+  const badges = [source, matchBadge].filter(Boolean);
   if (badges.length) stream.name = stream.name.replace(/^([^\s]+)\s+/, `$1 [${badges.join('] [')}] `);
-  if (matchKind === 'performer') {
-    stream.title += '\n⚠ Performer match only; verify this is the same scene.';
+  if (matchBadge) {
+    stream.title += `\n⚠ ${matchBadge} only; verify this is the same scene.`;
   }
   return stream;
 }
@@ -702,7 +714,7 @@ async function handleStreams(req, res, configStr) {
         const candidateTorrents = cached || await scrapers.searchAll(candidate.query, config.providers, { timeoutMs: 5000 });
         if (!cached) cache.set(cacheKey, candidateTorrents, STREAM_TTL);
 
-        if (candidate.matchKind === 'performer') {
+        if (candidate.matchKind === 'performer' || candidate.matchKind === 'title-keyword') {
           const performer = normalizeTitle(candidate.query);
           torrents = candidateTorrents.filter(torrent => normalizeTitle(torrent.rawTitle).includes(performer));
         } else {

@@ -75,7 +75,7 @@ test('serves the dynamic manifest with the shared version', async () => {
   const { status, body } = await getJson('/manifest.json');
 
   assert.equal(status, 200);
-  assert.equal(body.version, '1.3.3');
+  assert.equal(body.version, '1.3.4');
   assert.equal(body.id, 'community.torrentz.addon');
   assert.deepEqual(body.resources, ['catalog', 'meta', 'stream']);
   assert.deepEqual(body.types, ['movie']);
@@ -347,7 +347,7 @@ test('grouped IDs still resolve after an in-memory cache reset', async () => {
 test('metadata catalogs search independently and route matching torrents with source labels', async () => {
   const originalSearch = stashbox.search;
   const originalScrape = scrapers.searchAll;
-  const query = 'Scene Integration Test 2025';
+  const query = 'Blair Williams';
   const searchedSources = [];
   const torrentQueries = [];
   const config = encodeConfig({
@@ -362,29 +362,29 @@ test('metadata catalogs search independently and route matching torrents with so
       id: `${source}-scene-42`,
       provider: source,
       providerName: source === 'tpdb' ? 'ThePornDB' : 'StashDB',
-      title: 'Scene Integration Test',
+      title: 'Blair Williams Gets Banged By Her Stepfather',
       date: '2025-02-03',
-      code: '428531',
+      code: 'blair-williams-gets-banged-by-her-stepfather',
       studio: 'Example Studio',
-      performers: ['Example Performer'],
+      performers: [],
       poster: source === 'tpdb' ? 'https://images.example/scene.jpg' : 'https://images.example/duplicate.jpg',
       urls: []
     }];
   };
   scrapers.searchAll = async searchQuery => {
     torrentQueries.push(searchQuery);
-    if (searchQuery === 'Scene Integration Test') return [];
-    assert.equal(searchQuery, 'Example Performer');
+    if (searchQuery === 'Blair Williams Gets Banged By Her Stepfather') return [];
+    assert.equal(searchQuery, 'Blair Williams');
     return [
       {
-        rawTitle: 'Example.Performer.Scene.1080p.WEB-DL',
+        rawTitle: 'Blair.Williams.1080p.WEB-DL',
         infoHash: 'k'.repeat(40),
         sizeBytes: 2 * 1024 * 1024 * 1024,
         seeders: 30,
         source: 'ThePirateBay'
       },
       {
-        rawTitle: 'Example.Performer.Scene.720p.WEB-DL',
+        rawTitle: 'Blair.Williams.720p.WEB-DL',
         infoHash: 'l'.repeat(40),
         sizeBytes: 800 * 1024 * 1024,
         seeders: 20,
@@ -410,16 +410,16 @@ test('metadata catalogs search independently and route matching torrents with so
     assert.deepEqual(searchedSources, ['tpdb', 'stashdb']);
 
     const detail = await getJson(`/${config}/meta/movie/${encodeURIComponent(meta.id)}.json`);
-    assert.equal(detail.body.meta.name, 'Scene Integration Test');
+    assert.equal(detail.body.meta.name, 'Blair Williams Gets Banged By Her Stepfather');
 
     const streams = await getJson(`/${config}/stream/movie/${encodeURIComponent(meta.id)}.json`);
     assert.equal(streams.body.streams.length, 2);
     assert.match(streams.body.streams[0].name, /\[ThePirateBay\]/);
     assert.match(streams.body.streams[1].name, /\[1337x\]/);
-    assert.ok(streams.body.streams.every(stream => stream.name.includes('[Performer match]')));
-    assert.ok(streams.body.streams.every(stream => stream.title.includes('Performer match only')));
-    assert.deepEqual(torrentQueries, ['Scene Integration Test', 'Example Performer']);
-    assert.ok(streams.body.streams.every(stream => stream.title.startsWith('Scene Integration Test')));
+    assert.ok(streams.body.streams.every(stream => stream.name.includes('[Title keyword match]')));
+    assert.ok(streams.body.streams.every(stream => stream.title.includes('Title keyword match only')));
+    assert.deepEqual(torrentQueries, ['Blair Williams Gets Banged By Her Stepfather', 'Blair Williams']);
+    assert.ok(streams.body.streams.every(stream => stream.title.startsWith('Blair Williams Gets Banged By Her Stepfather')));
   } finally {
     stashbox.search = originalSearch;
     scrapers.searchAll = originalScrape;
