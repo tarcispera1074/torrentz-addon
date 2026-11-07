@@ -26,7 +26,12 @@ async function searchLimeTorrents(query) {
       const $ = cheerio.load(res.data);
       $('table.table2 tr').each((_, el) => {
         const row = $(el);
-        const nameAnchor = row.find('.tt-name a').last();
+        const legacyNameAnchor = row.find('.tt-name a').last();
+        // LimeTorrents removed the `.tt-name` wrapper from result rows. The
+        // title link is now the last link in the first (`tdleft`) cell.
+        const nameAnchor = legacyNameAnchor.length
+          ? legacyNameAnchor
+          : row.find('td.tdleft a').last();
         const rawTitle = nameAnchor.text().trim();
         const href = nameAnchor.attr('href') || '';
         if (!rawTitle || !href) return;

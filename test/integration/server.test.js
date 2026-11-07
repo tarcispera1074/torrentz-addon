@@ -76,7 +76,7 @@ test('serves the dynamic manifest with the shared version', async () => {
   const { status, body } = await getJson('/manifest.json');
 
   assert.equal(status, 200);
-  assert.equal(body.version, '1.4.4');
+  assert.equal(body.version, '1.4.5');
   assert.equal(body.id, 'community.torrentz.addon');
   assert.deepEqual(body.resources, ['catalog', 'meta', 'stream']);
   assert.deepEqual(body.types, ['movie']);
@@ -450,12 +450,12 @@ test('metadata catalogs search independently and route matching torrents with so
   }
 });
 
-test('uncached metadata matches use TorBox downloads when P2P fallback is disabled', async () => {
+test('uncached metadata matches from multiple providers use TorBox downloads without P2P', async () => {
   const originalSearch = stashbox.search;
   const originalScrape = scrapers.searchAll;
   const originalCacheCheck = debrid.checkCache;
   const config = encodeConfig({
-    providers: ['tpb'],
+    providers: ['tpb', 'limetorrents'],
     metadataSources: ['stashdb'],
     metadataApiKeys: { stashdb: 'stashdb-torbox-test-key' },
     debridProvider: 'torbox',
@@ -465,33 +465,43 @@ test('uncached metadata matches use TorBox downloads when P2P fallback is disabl
   });
 
   stashbox.search = async () => ([{
-    id: 'midnight-snack-torbox-test-scene',
+    id: 'wedding-banger-torbox-test-scene',
     provider: 'stashdb',
     providerName: 'StashDB',
-    title: 'Midnight Snack',
-    studio: 'Babes',
-    performers: ['Blair Williams'],
-    poster: 'https://images.example/midnight-snack.jpg',
+    title: 'The Wedding Banger',
+    studio: 'BoldlyGirls',
+    performers: ['Sheila Ortega'],
+    poster: 'https://images.example/wedding-banger.jpg',
     urls: []
   }]);
   scrapers.searchAll = async () => ([{
-    rawTitle: 'Babes - Blair Williams - Midnight Snack 1080p',
+    rawTitle: '[BoldlyGirls/CumLouder] Sheila Ortega - The Wedding Banger 1080p',
     infoHash: '9'.repeat(40),
     sizeBytes: 2 * 1024 * 1024 * 1024,
     seeders: 18,
     source: 'ThePirateBay'
+  }, {
+    rawTitle: 'Sheila Ortega - The Wedding Banger 711x400 mp4',
+    infoHash: '8'.repeat(40),
+    sizeBytes: 325 * 1024 * 1024,
+    seeders: 0,
+    source: 'LimeTorrents'
   }]);
   debrid.checkCache = async () => new Set();
 
   try {
-    const catalog = await getJson(`/${config}/catalog/movie/torrentz_stashdb/search=Midnight%20Snack.json`);
+    const catalog = await getJson(`/${config}/catalog/movie/torrentz_stashdb/search=The%20Wedding%20Banger.json`);
     const sceneId = catalog.body.metas[0].id;
     const streams = await getJson(`/${config}/stream/movie/${encodeURIComponent(sceneId)}.json`);
 
-    assert.equal(streams.body.streams.length, 1);
-    assert.equal(streams.body.streams[0].name, '[TORBOX download] [ThePirateBay] 1080p');
+    assert.equal(streams.body.streams.length, 2);
+    assert.deepEqual(streams.body.streams.map(stream => stream.name), [
+      '[TORBOX download] [ThePirateBay] 1080p',
+      '[TORBOX download] [LimeTorrents] HD'
+    ]);
     assert.match(streams.body.streams[0].url, /\/playback\/.+\/9{40}$/);
-    assert.equal(streams.body.streams[0].infoHash, undefined);
+    assert.match(streams.body.streams[1].url, /\/playback\/.+\/8{40}$/);
+    assert.ok(streams.body.streams.every(stream => stream.infoHash === undefined));
   } finally {
     stashbox.search = originalSearch;
     scrapers.searchAll = originalScrape;
