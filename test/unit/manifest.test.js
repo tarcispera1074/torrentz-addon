@@ -10,7 +10,13 @@ test('default manifest is valid and uses the shared version constant', () => {
   assert.equal(manifest.id, 'community.torrentz.addon');
   assert.deepEqual(manifest.resources, ['catalog', 'meta', 'stream']);
   assert.deepEqual(manifest.types, ['movie']);
-  assert.deepEqual(manifest.catalogs, []);
+  assert.deepEqual(manifest.catalogs.map(catalog => catalog.name), [
+    'Torrentz: xHamster (HD)',
+    'Torrentz: xVideos (HD)',
+    'Torrentz: RedTube (HD)',
+    'Torrentz: YouPorn (HD)',
+    'Torrentz: Tube8 (HD)'
+  ]);
   assert.equal(manifest.behaviorHints.configurable, true);
 });
 
@@ -18,6 +24,7 @@ test('porn-only manifest exposes a distinct catalog for each enabled keyed sourc
   const manifest = createManifest({
     ...DEFAULT_CONFIG,
     metadataSources: ['tpdb', 'stashdb', 'javstash', 'pmvstash', 'fansdb'],
+    tubeSites: ['xhamster', 'xhamster_4k'],
     metadataApiKeys: {
       tpdb: 'tpdb-token',
       stashdb: 'stashdb-token',
@@ -32,9 +39,15 @@ test('porn-only manifest exposes a distinct catalog for each enabled keyed sourc
     'Torrentz: StashDB',
     'Torrentz: JAVStash',
     'Torrentz: PMV Stash',
-    'Torrentz: FansDB'
+    'Torrentz: FansDB',
+    'Torrentz: xHamster (HD)',
+    'Torrentz: xHamster (4K)'
   ]);
-  assert.equal(new Set(manifest.catalogs.map(catalog => catalog.id)).size, 5);
+  assert.equal(new Set(manifest.catalogs.map(catalog => catalog.id)).size, 7);
+  assert.deepEqual(
+    manifest.catalogs.slice(-2).map(catalog => catalog.name),
+    ['Torrentz: xHamster (HD)', 'Torrentz: xHamster (4K)']
+  );
   assert.ok(manifest.idPrefixes.includes('tpdb-scene:'));
 });
 

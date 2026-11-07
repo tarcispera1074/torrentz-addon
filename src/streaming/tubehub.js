@@ -13,18 +13,22 @@ function baseUrl() {
   return String(process.env.TUBEHUB_ADDON_URL || DEFAULT_TUBEHUB_URL).replace(/\/+$/, '');
 }
 
-function siteCatalogKey(siteId, query) {
-  return `tubehub-catalog:${siteId}:${String(query).trim().toLowerCase()}`;
+function siteCatalogKey(siteId, query, skip) {
+  return `tubehub-catalog:${siteId}:${String(query).trim().toLowerCase()}:${skip}`;
 }
 
-async function searchSite(siteId, query) {
+async function searchSite(siteId, query, skip = 0) {
   if (!TUBE_SITE_IDS.includes(siteId)) return [];
-  const key = siteCatalogKey(siteId, query);
+  const safeSkip = Math.max(0, Math.floor(Number(skip) || 0));
+  const key = siteCatalogKey(siteId, query, safeSkip);
   const cached = cache.get(key);
   if (cached) return cached;
 
   try {
-    const url = `${baseUrl()}/catalog/movie/tube_${siteId}/search=${encodeURIComponent(query)}.json`;
+    const extra = query
+      ? `search=${encodeURIComponent(query)}&skip=${safeSkip}`
+      : `skip=${safeSkip}`;
+    const url = `${baseUrl()}/catalog/movie/tube_${siteId}/${extra}.json`;
     const response = await client.get(url, { timeout: REQUEST_TIMEOUT_MS });
     const items = Array.isArray(response.data?.metas) ? response.data.metas : [];
     cache.set(key, items, items.length ? CATALOG_TTL : 60_000);
@@ -49,6 +53,29 @@ function keywordMatch(query, itemTitle) {
   const actual = new Set(normalizeTitle(itemTitle).split(' '));
   const matched = words.filter(word => actual.has(word)).length;
   return matched >= Math.max(1, Math.ceil(words.length * 0.7));
+}
+
+function sceneKeywordMatch(scene, itemTitle) {
+  const titleWords = normalizeTitle(scene?.title)
+    .split(' ')
+    .filter(word => word.length > 1 && !TITLE_STOP_WORDS.has(word));
+  if (titleWords.length === 0) return false;
+
+  const normalizedItem = normalizeTitle(itemTitle);
+  const itemWords = new Set(normalizedItem.split(' '));
+  const overlap = titleWords.filter(word => itemWords.has(word)).length / titleWords.length;
+  const castMatch = (scene.performers || []).some(name => {
+    const performer = normalizeTitle(name);
+    return performer.length > 2 && normalizedItem.includes(performer);
+  });
+  const studio = normalizeTitle(scene.studio);
+  const studioMatch = studio.length > 2 && normalizedItem.includes(studio);
+
+  // Keyword-only results must still resemble the selected scene; matching a
+  // performer by itself would mix in that performer's unrelated videos.
+  if (titleWords.length <= 2) return overlap === 1 && (castMatch || studioMatch);
+  if (overlap >= 0.7) return true;
+  return overlap >= 0.5 && (castMatch || studioMatch);
 }
 
 function keywordQueries(scene) {
@@ -91,10 +118,11 @@ async function resolveTubeItem(siteId, item, matchKind, matchQuery) {
     const label = TUBE_SITES[siteId] || siteId;
     const matchDescription = matchKind === 'exact'
       ? `Exact title match: ${matchQuery}`
-      : `Keyword match: ${matchQuery} — verify it is the same scene.`;
+      : (matchKind === 'keyword' ? `Keyword match: ${matchQuery} — verify it is the same scene.` : '');
+    const title = [item.name || 'Direct video', selected.title].filter(Boolean).join(' • ');
     const result = [{
       name: `TubeHub: ${label}${matchKind === 'keyword' ? ' (keyword match)' : ''}`,
-      title: `${item.name || 'Direct video'} • ${selected.title || ''}\n${matchDescription}`,
+      title: [title, matchDescription].filter(Boolean).join('\n'),
       url: selected.url,
       ...(selected.behaviorHints ? { behaviorHints: selected.behaviorHints } : {})
     }];
@@ -104,6 +132,29 @@ async function resolveTubeItem(siteId, item, matchKind, matchQuery) {
     console.warn(`[TubeHub] ${siteId} stream lookup failed: ${error.response?.status || error.code || 'network error'}`);
     return [];
   }
+}
+
+function parseTubeItemId(id) {
+  const match = String(id || '').match(/^tube:([^:]+):.+$/);
+  return match && TUBE_SITE_IDS.includes(match[1]) ? { siteId: match[1], id: String(id) } : null;
+}
+
+async function getCatalogItemMeta(id) {
+  const parsed = parseTubeItemId(id);
+  if (!parsed) return null;
+  try {
+    const url = `${baseUrl()}/meta/movie/${encodeURIComponent(parsed.id)}.json`;
+    const response = await client.get(url, { timeout: REQUEST_TIMEOUT_MS });
+    return response.data?.meta || null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveCatalogItem(id, name = 'Direct video') {
+  const parsed = parseTubeItemId(id);
+  if (!parsed) return [];
+  return resolveTubeItem(parsed.siteId, { id: parsed.id, name }, 'catalog', '');
 }
 
 async function searchAndResolve(siteIds, query, matchKind, scene) {
@@ -117,7 +168,7 @@ async function searchAndResolve(siteIds, query, matchKind, scene) {
     for (const item of items) {
       const matched = matchKind === 'exact'
         ? exactTitleMatch(scene.title, item.name)
-        : keywordMatch(query, item.name);
+        : keywordMatch(query, item.name) && sceneKeywordMatch(scene, item.name);
       if (!matched) continue;
       const candidates = candidatesBySite.get(siteId) || [];
       if (!candidates.some(candidate => candidate.item.id === item.id)) {
@@ -164,6 +215,10 @@ module.exports = {
   DEFAULT_TUBEHUB_URL,
   searchSite,
   searchForScene,
+  parseTubeItemId,
+  getCatalogItemMeta,
+  resolveCatalogItem,
   exactTitleMatch,
-  keywordMatch
+  keywordMatch,
+  sceneKeywordMatch
 };

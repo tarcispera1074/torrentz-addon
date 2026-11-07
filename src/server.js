@@ -78,13 +78,14 @@ function decodeGroupId(value) {
   }
 }
 
-function catalogCacheKey(type, id, query, providers, metadataSources = [], metadataApiKeys = {}) {
+function catalogCacheKey(type, id, query, providers, metadataSources = [], metadataApiKeys = {}, tubeSites = []) {
   const metadataSignature = [...metadataSources]
     .filter(source => metadataApiKeys[source])
     .sort()
     .map(source => `${source}:${createHash('sha256').update(metadataApiKeys[source]).digest('hex').slice(0, 12)}`)
     .join(',');
-  return `catalog-response:${type}:${id}:${normalizeProviders(providers)}:${metadataSignature}:${String(query).trim().toLowerCase()}`;
+  const selectedTubeSites = [...tubeSites].sort().join(',');
+  return `catalog-response:${type}:${id}:${normalizeProviders(providers)}:${metadataSignature}:${selectedTubeSites}:${String(query).trim().toLowerCase()}`;
 }
 
 function groupKeyParts(key) {
@@ -572,12 +573,16 @@ async function handleCatalog(req, res, configStr) {
   const config = decodeConfig(configStr);
   const parsedExtra = parseCatalogExtra(req, extra);
   const metadataSource = metadataSourceForCatalogId(id);
+  const tubeSiteMatch = String(id || '').match(/^torrentz_tube_(.+)$/);
+  const tubeSite = tubeSiteMatch && tubehub.TUBE_SITE_IDS.includes(tubeSiteMatch[1])
+    ? tubeSiteMatch[1]
+    : null;
 
   let searchQuery = req.query.search || parsedExtra.search || '';
   searchQuery = String(searchQuery || '').trim();
 
   if (!searchQuery) {
-    if (metadataSource) {
+    if (metadataSource || tubeSite) {
       searchQuery = '';
     } else if (id === 'torrentz_xxx') {
       searchQuery = '1080p';
@@ -586,7 +591,9 @@ async function handleCatalog(req, res, configStr) {
     }
   }
 
-  console.log(`[Catalog Search] Querying ${metadataSource || 'torrent'} catalog for: "${searchQuery}" (${type})`);
+  console.log(`[Catalog Search] Querying ${metadataSource || tubeSite || 'torrent'} catalog for: "${searchQuery}" (${type})`);
+
+  if (tubeSite && !(config.tubeSites || []).includes(tubeSite)) return res.json({ metas: [] });
 
   const isAdult = type === 'other' || /xxx/i.test(id);
   const activeMetadataSources = metadataSource &&
@@ -600,11 +607,35 @@ async function handleCatalog(req, res, configStr) {
     searchQuery,
     config.providers,
     activeMetadataSources,
-    config.metadataApiKeys
+    config.metadataApiKeys,
+    config.tubeSites || []
   );
   const cachedMetas = cache.get(responseKey);
   if (cachedMetas) {
     return res.json({ metas: cachedMetas });
+  }
+
+  if (tubeSite) {
+    try {
+      const skip = Math.max(0, parseInt(parsedExtra.skip || req.query.skip, 10) || 0);
+      const items = await tubehub.searchSite(tubeSite, searchQuery, skip);
+      const metas = items.map(item => {
+        cache.set(`tubehub-item-meta:${item.id}`, item, CATALOG_TORRENT_TTL);
+        return {
+          id: item.id,
+          type: type || 'movie',
+          name: item.name,
+          poster: item.poster || undefined,
+          posterShape: 'landscape',
+          description: `TubeHub: ${tubehub.TUBE_SITES[tubeSite]}`
+        };
+      }).slice(0, 50);
+      cache.set(responseKey, metas, metas.length ? CATALOG_TTL : EMPTY_CATALOG_TTL);
+      return res.json({ metas });
+    } catch (err) {
+      console.error(`[TubeHub Catalog Error] ${tubeSite}: ${err.message}`);
+      return res.json({ metas: [] });
+    }
   }
 
   if (metadataSource && activeMetadataSources.length === 0) {
@@ -648,6 +679,21 @@ app.get('/:config/catalog/:type/:id/:extra.json', (req, res) => handleCatalog(re
 // 4. Meta handler (for items clicked from the search results)
 async function handleMeta(req, res, configStr) {
   const { type, id } = req.params;
+  if (id.startsWith('tube:')) {
+    const tubeItem = cache.get(`tubehub-item-meta:${id}`) || await tubehub.getCatalogItemMeta(id);
+    if (!tubeItem) return res.json({ meta: null });
+    return res.json({
+      meta: {
+        id,
+        type: type || 'movie',
+        name: tubeItem.name || 'Direct video',
+        poster: tubeItem.poster || placeholderPosterUrl(req, tubeItem.name || 'Direct video'),
+        posterShape: 'landscape',
+        description: `TubeHub: ${tubehub.TUBE_SITES[tubehub.parseTubeItemId(id)?.siteId] || 'direct video site'}`
+      }
+    });
+  }
+
   const metadataId = parseMetadataSceneId(id);
 
   if (metadataId) {
@@ -724,6 +770,16 @@ async function handleStreams(req, res, configStr) {
   const config = decodeConfig(configStr);
 
   try {
+    if (id.startsWith('tube:')) {
+      const parsedTubeId = tubehub.parseTubeItemId(id);
+      if (!parsedTubeId || !(config.tubeSites || []).includes(parsedTubeId.siteId)) {
+        return res.json({ streams: [] });
+      }
+      const item = cache.get(`tubehub-item-meta:${id}`) || await tubehub.getCatalogItemMeta(id);
+      const streams = await tubehub.resolveCatalogItem(id, item?.name || 'Direct video');
+      return res.json({ streams });
+    }
+
     let torrents = [];
     let metadataScene = null;
     let metadataMatchKind = 'title';

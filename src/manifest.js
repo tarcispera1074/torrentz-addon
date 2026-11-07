@@ -1,5 +1,6 @@
 const { DEFAULT_CONFIG } = require('./config');
 const debrid = require('./debrid');
+const { TUBE_SITES } = require('./streaming/tube-sites');
 
 const ADDON_VERSION = '1.4.0';
 
@@ -25,6 +26,19 @@ function createManifest(config = DEFAULT_CONFIG) {
       name: `Torrentz: ${label}`,
       extra: [{ name: 'search', isRequired: false }]
     }));
+  for (const siteId of config.tubeSites || []) {
+    const label = TUBE_SITES[siteId];
+    if (!label) continue;
+    catalogs.push({
+      type: 'movie',
+      id: `torrentz_tube_${siteId}`,
+      name: `Torrentz: ${label}`,
+      extra: [
+        { name: 'search', isRequired: false },
+        { name: 'skip', isRequired: false }
+      ]
+    });
+  }
 
   const id = 'community.torrentz.addon';
   let name = 'Torrentz';
@@ -47,6 +61,7 @@ function createManifest(config = DEFAULT_CONFIG) {
       'tt',
       'torrentz:',
       'torrentz-group:',
+      'tube:',
       'tpdb-scene:',
       'stashdb-scene:',
       'javstash-scene:',
