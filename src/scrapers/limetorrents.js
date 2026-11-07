@@ -37,6 +37,17 @@ async function searchLimeTorrents(query) {
           infoHash = extractInfoHash(magnetHref) || infoHash;
         }
 
+        // LimeTorrents commonly exposes a direct .torrent download link whose
+        // URL contains the info hash, rather than an inline magnet link.
+        if (!infoHash) {
+          row.find('a[href]').each((_, anchor) => {
+            if (infoHash) return;
+            const downloadHref = $(anchor).attr('href') || '';
+            if (!/\.torrent(?:[?#]|$)/i.test(downloadHref)) return;
+            infoHash = downloadHref.match(/([a-fA-F0-9]{40})/)?.[1]?.toLowerCase() || null;
+          });
+        }
+
         const sizeText = row.find('td.tdnormal').eq(1).text().trim();
         const seeders = parseInt(row.find('td.tdseed').text().trim(), 10) || 0;
 

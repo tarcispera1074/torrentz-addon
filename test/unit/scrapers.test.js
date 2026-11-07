@@ -83,10 +83,12 @@ test('LimeTorrents scrape extracts the hash from the torrent URL', async () => {
   try {
     const results = await limetorrents.search('Inception');
 
-    assert.equal(results.length, 1);
+    assert.equal(results.length, 2);
     assert.equal(results[0].infoHash, '1111111111111111111111111111111111111111');
     assert.equal(results[0].seeders, 987);
     assert.equal(results[0].source, 'LimeTorrents');
+    assert.equal(results[1].infoHash, '2222222222222222222222222222222222222222');
+    assert.equal(results[1].seeders, 123);
   } finally {
     restore();
   }
