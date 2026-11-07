@@ -132,33 +132,58 @@ client.interceptors.response.use(null, async (error) => {
 });
 
 /**
- * Fetch an HTML page. When FLARESOLVERR_URL is set and the target blocks the
- * request with a Cloudflare challenge, retry through FlareSolverr.
+ * Fetch an HTML page. When FLARESOLVERR_URL is set, retry blocked or challenge
+ * pages through FlareSolverr (including HTTP 200 challenge shells).
  */
+function isChallengePage(status, body) {
+  const text = typeof body === 'string' ? body : '';
+  return status === 403 || status === 429 || status === 503 ||
+    /cf-browser-verification|__cf_chl|cf-challenge|just a moment|attention required|checking your browser|verify you are human|enable javascript and cookies to continue/i.test(text) ||
+    /^\s*(?:<!doctype html>\s*)?<html[^>]*>\s*<head[^>]*>\s*<title>\s*(?:loading|access denied|security check)/i.test(text);
+}
+
 async function requestHtml(url, options = {}) {
+  let response;
+  let originalError;
   try {
-    return await client.get(url, options);
+    response = await client.get(url, options);
   } catch (err) {
-    const status = err.response?.status;
-    const body = typeof err.response?.data === 'string' ? err.response.data : '';
-    const blocked = status === 403 || status === 503 ||
-      /cloudflare|cf-browser-verification|just a moment|attention required/i.test(body);
+    originalError = err;
+    response = err.response;
+  }
 
-    const solverUrl = process.env.FLARESOLVERR_URL;
-    if (!blocked || !solverUrl) throw err;
+  const status = response?.status;
+  const body = typeof response?.data === 'string' ? response.data : '';
+  if (!isChallengePage(status, body)) {
+    if (originalError) throw originalError;
+    return response;
+  }
 
-    try {
-      const solver = await axios.post(
-        `${solverUrl.replace(/\/+$/, '')}/v1`,
-        { cmd: 'request.get', url, maxTimeout: 20000 },
-        { timeout: 30000 }
-      );
-      const html = solver.data?.solution?.response;
-      if (!html) throw err;
-      return { status: 200, data: html, headers: {}, config: {} };
-    } catch (solverErr) {
-      throw err;
+  const solverUrl = process.env.FLARESOLVERR_URL;
+  if (!solverUrl) {
+    if (originalError) throw originalError;
+    const error = new Error(`HTTP ${status || 200} challenge page from ${new URL(url).host}`);
+    error.code = 'HTTP_CHALLENGE';
+    throw error;
+  }
+
+  const maxTimeout = Math.max(3000, Math.min(Number(options.timeout) || 8000, 10000));
+  try {
+    const solver = await axios.post(
+      `${solverUrl.replace(/\/+$/, '')}/v1`,
+      { cmd: 'request.get', url, maxTimeout },
+      { timeout: maxTimeout + 5000 }
+    );
+    const html = solver.data?.solution?.response;
+    if (!html || isChallengePage(solver.data?.solution?.status, html)) {
+      throw new Error('FlareSolverr did not return an unblocked page');
     }
+    return { status: 200, data: html, headers: {}, config: {} };
+  } catch (solverError) {
+    const error = new Error(`Request blocked and FlareSolverr failed: ${solverError.message}`);
+    error.code = 'SCRAPER_CHALLENGE';
+    error.cause = originalError || solverError;
+    throw error;
   }
 }
 

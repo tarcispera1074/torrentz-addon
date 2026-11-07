@@ -2,7 +2,7 @@ const { DEFAULT_CONFIG } = require('./config');
 const debrid = require('./debrid');
 const { TUBE_SITES } = require('./streaming/tube-sites');
 
-const ADDON_VERSION = '1.4.6';
+const ADDON_VERSION = '1.4.7';
 
 const METADATA_CATALOGS = [
   { source: 'tpdb', label: 'PornDB' },

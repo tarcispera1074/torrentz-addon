@@ -12,13 +12,13 @@ const PRIMARY_MIRRORS = [
 async function search1337x(query) {
   const results = [];
 
-  // Try fastest mirror first with quick 3s timeout
+  // Give mirrors and the optional challenge solver time to return a page.
   for (const domain of PRIMARY_MIRRORS) {
     if (!mirrors.canUse(domain)) continue;
 
     try {
       const searchUrl = `${domain}/search/${encodeURIComponent(query)}/1/`;
-      const res = await requestHtml(searchUrl, { timeout: 3000 });
+      const res = await requestHtml(searchUrl, { timeout: 8000 });
       if (!res.data || res.status !== 200) {
         mirrors.markFailure(domain);
         continue;
@@ -28,7 +28,12 @@ async function search1337x(query) {
 
       const $ = cheerio.load(res.data);
       const rows = $('table.table-list tbody tr');
-      if (rows.length === 0) continue;
+      if (rows.length === 0) {
+        if (/loading|checking your browser|verify you are human|cloudflare/i.test($.text())) {
+          mirrors.markFailure(domain);
+        }
+        continue;
+      }
 
       const topRows = [];
       rows.each((_, el) => {
@@ -49,7 +54,7 @@ async function search1337x(query) {
       await Promise.allSettled(
         topRows.map(async (item) => {
           try {
-            const detailRes = await requestHtml(`${domain}${item.href}`, { timeout: 2500 });
+            const detailRes = await requestHtml(`${domain}${item.href}`, { timeout: 6000 });
             const magnet = detailRes.data?.match(/magnet:\?xt=urn:btih:[a-zA-Z0-9]{32,40}/i)?.[0];
             const hash = extractInfoHash(magnet);
             if (hash) {

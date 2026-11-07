@@ -33,7 +33,7 @@ const SCRAPERS = {
   ffjav,
 };
 
-const DEFAULT_SEARCH_TIMEOUT_MS = 8000;
+const DEFAULT_SEARCH_TIMEOUT_MS = 18000;
 const inFlightSearches = new Map();
 
 /**
@@ -92,9 +92,9 @@ async function searchAll(query, enabledProviders = ['tpb', '1337x', 'limetorrent
   const active = resolveScrapers(enabledProviders || []);
   const timeoutMs = Number.isFinite(options.timeoutMs)
     ? Math.max(1000, Math.min(20000, options.timeoutMs))
-    // Large selections commonly include blocked/login-only sites. Return
-    // partial results sooner instead of making the client wait for every one.
-    : (active.length > 4 ? 5000 : DEFAULT_SEARCH_TIMEOUT_MS);
+    // Give challenge-solver-backed and detail-page scrapers time to finish,
+    // while retaining a hard cap so one slow provider cannot stall a request.
+    : DEFAULT_SEARCH_TIMEOUT_MS;
 
   const cacheKey = `${String(query).trim().toLowerCase()}|${active.map(e => e.id).sort().join(',')}`;
   const existing = inFlightSearches.get(cacheKey);
