@@ -11,7 +11,7 @@ const {
   getTitleInfo,
   normalizeResolution
 } = require('./utils/parser');
-const { streamsCacheKey, debridFlagsCacheKey } = require('./utils/cacheKeys');
+const { streamsCacheKey, debridFlagsCacheKey, normalizeProviders } = require('./utils/cacheKeys');
 const { createManifest } = require('./manifest');
 const cache = require('./utils/cache');
 
@@ -20,6 +20,8 @@ app.set('trust proxy', true);
 app.use(cors());
 
 const CATALOG_TORRENT_TTL = 24 * 60 * 60 * 1000;
+const CATALOG_TTL = 10 * 60 * 1000;
+const EMPTY_CATALOG_TTL = 2 * 60 * 1000;
 const STREAM_TTL = 15 * 60 * 1000;
 const DEBRID_FLAGS_TTL = 10 * 60 * 1000;
 
@@ -69,6 +71,56 @@ function decodeGroupId(value) {
   }
 }
 
+function catalogCacheKey(type, id, query, providers) {
+  return `catalog-response:${type}:${id}:${normalizeProviders(providers)}:${String(query).trim().toLowerCase()}`;
+}
+
+function groupKeyParts(key) {
+  const [title = '', year = '', season = '', episode = ''] = String(key || '').split('|');
+  return { title, year, season, episode };
+}
+
+function groupKeyLabel(key) {
+  const { title, year, season, episode } = groupKeyParts(key);
+  let label = title ? title.replace(/\b\w/g, ch => ch.toUpperCase()) : '';
+  if (year) label += ` (${year})`;
+  if (season && episode) {
+    label += ` S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+  }
+  return label || 'Torrent group';
+}
+
+/**
+ * Rebuild a grouped catalog item after the in-memory cache was cleared (for
+ * example when Render restarts). The ID carries the canonical title/year key,
+ * so the variants can always be recovered with one bounded search.
+ */
+async function getGroupTorrents(groupId, config) {
+  const cacheKey = `torrent-group:${groupId}`;
+  const cached = cache.get(cacheKey);
+  if (Array.isArray(cached) && cached.length > 0) return cached;
+
+  const key = decodeGroupId(groupId);
+  if (!key) return [];
+
+  const { title, year } = groupKeyParts(key);
+  const query = [title.slice(0, 150), year].filter(Boolean).join(' ').trim();
+  if (!query) return [];
+
+  const results = await scrapers.searchAll(query, config.providers);
+  let variants = results.filter(torrent => getTitleInfo(torrent.rawTitle).key === key);
+  if (variants.length === 0) {
+    variants = results.filter(torrent => normalizeTitle(torrent.rawTitle).includes(title));
+  }
+  if (variants.length === 0) return [];
+
+  for (const torrent of variants) {
+    cache.set(`torrent:${torrent.infoHash}`, torrent, CATALOG_TORRENT_TTL);
+  }
+  cache.set(cacheKey, variants, CATALOG_TORRENT_TTL);
+  return variants;
+}
+
 function escapeXml(value) {
   return String(value)
     .replace(/&/g, '&amp;')
@@ -112,12 +164,7 @@ function placeholderPosterUrl(req, title) {
 /**
  * Enrich scraped torrents with real Cinemeta posters when a title matches.
  */
-async function buildCatalogMetas(torrents, type, searchQuery, req) {
-  let catalog = [];
-  if (type === 'movie' || type === 'series') {
-    catalog = await searchCatalog(type, searchQuery);
-  }
-
+function buildCatalogMetas(torrents, type, catalog, req) {
   const byKey = new Map();
   for (const meta of catalog) {
     if (!meta || !meta.name) continue;
@@ -326,9 +373,24 @@ async function handleCatalog(req, res, configStr) {
   }
 
   console.log(`[Catalog Search] Querying torrents for: "${searchQuery}" (${type})`);
+
+  const isAdult = type === 'other' || /xxx/i.test(id);
+  const responseKey = catalogCacheKey(type, id, searchQuery, config.providers);
+  const cachedMetas = cache.get(responseKey);
+  if (cachedMetas) {
+    return res.json({ metas: cachedMetas });
+  }
+
   try {
-    const torrents = await scrapers.searchAll(searchQuery, config.providers);
-    const metas = await buildCatalogMetas(torrents.slice(0, 50), type, searchQuery, req);
+    // Run Cinemeta and the scrapers together. Adult titles are very unlikely to
+    // exist in Cinemeta, so skipping that lookup saves several seconds there.
+    const [torrents, catalog] = await Promise.all([
+      scrapers.searchAll(searchQuery, config.providers),
+      isAdult ? Promise.resolve([]) : searchCatalog(type, searchQuery).catch(() => [])
+    ]);
+
+    const metas = buildCatalogMetas(torrents, type, catalog, req).slice(0, 50);
+    cache.set(responseKey, metas, metas.length > 0 ? CATALOG_TTL : EMPTY_CATALOG_TTL);
     res.json({ metas });
   } catch (err) {
     console.error('[Catalog Error]', err.message);
@@ -350,15 +412,18 @@ async function handleMeta(req, res, configStr) {
     const variants = cache.get(`torrent-group:${groupId}`) || [];
     const first = variants[0];
     const info = first ? getTitleInfo(first.rawTitle) : null;
-    const name = info?.label || `Torrent group ${groupId.slice(0, 8)}`;
+    const decodedKey = decodeGroupId(groupId);
+    const name = info?.label || groupKeyLabel(decodedKey);
     return res.json({
       meta: {
         id,
         type: type || 'movie',
         name,
-        poster: placeholderPosterUrl(req, name),
+        poster: first?.poster || placeholderPosterUrl(req, name),
         posterShape: 'poster',
-        description: `${variants.length} quality and size options`
+        description: variants.length > 0
+          ? `${variants.length} quality and size options`
+          : 'Quality and size options'
       }
     });
   }
@@ -402,7 +467,7 @@ async function handleStreams(req, res, configStr) {
     // Case A: Stream requested from a grouped catalog item.
     if (id.startsWith('torrentz-group:')) {
       const groupId = id.replace('torrentz-group:', '');
-      torrents = cache.get(`torrent-group:${groupId}`) || [];
+      torrents = await getGroupTorrents(groupId, config);
     }
     // Case B: Stream requested from a single catalog item (legacy IDs).
     else if (id.startsWith('torrentz:')) {

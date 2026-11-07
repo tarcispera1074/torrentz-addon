@@ -157,3 +157,27 @@ test('scraper orchestrator deduplicates hashes and keeps the highest seeders', a
     x1337.search = originalX1337;
   }
 });
+
+test('a hanging provider cannot hold the whole search past the deadline', async () => {
+  const { searchAll } = require('../../src/scrapers');
+  const originalTpb = tpb.search;
+  const originalX1337 = x1337.search;
+
+  tpb.search = () => new Promise(() => {});
+  x1337.search = async () => ([
+    { rawTitle: 'Deadline Cache Test 1080p', infoHash: 'b'.repeat(39) + 'c', seeders: 3, sizeBytes: 1, source: '1337x' }
+  ]);
+
+  const started = Date.now();
+  try {
+    const results = await searchAll('deadline probe', ['tpb', '1337x'], { timeoutMs: 1000 });
+    const elapsed = Date.now() - started;
+
+    assert.equal(results.length, 1);
+    assert.equal(results[0].source, '1337x');
+    assert.ok(elapsed < 2500, `search took ${elapsed}ms`);
+  } finally {
+    tpb.search = originalTpb;
+    x1337.search = originalX1337;
+  }
+});

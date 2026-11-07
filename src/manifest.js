@@ -80,7 +80,7 @@ function createManifest(config = DEFAULT_CONFIG) {
     description,
     resources: ['catalog', 'meta', 'stream'],
     types,
-    idPrefixes: ['tt', 'torrentz:'],
+    idPrefixes: ['tt', 'torrentz:', 'torrentz-group:'],
     catalogs,
     behaviorHints: {
       configurable: true,

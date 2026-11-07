@@ -77,6 +77,7 @@ test('serves the dynamic manifest with the shared version', async () => {
   assert.equal(body.version, '1.1.0');
   assert.equal(body.id, 'community.torrentz.addon');
   assert.deepEqual(body.resources, ['catalog', 'meta', 'stream']);
+  assert.ok(body.idPrefixes.includes('torrentz-group:'));
 });
 
 test('configuration page exposes both provider actions and the manifest URL', async () => {
@@ -231,6 +232,64 @@ test('catalog search decodes an ampersand in the title exactly once', async () =
   try {
     await getJson('/catalog/movie/torrentz_movies/search=Fast%20%26%20Furious.json');
     assert.equal(seenQuery, 'Fast & Furious');
+  } finally {
+    scrapers.searchAll = original;
+  }
+});
+
+test('catalog responses are cached between client refreshes', async () => {
+  const original = scrapers.searchAll;
+  let calls = 0;
+  scrapers.searchAll = async () => {
+    calls += 1;
+    return [{
+      rawTitle: 'Cache Test 2024 1080p',
+      infoHash: 'h'.repeat(40),
+      sizeBytes: 1024,
+      seeders: 4,
+      source: 'tpb'
+    }];
+  };
+
+  try {
+    const first = await getJson('/catalog/movie/torrentz_xxx/search=Cache%20Test.json');
+    const second = await getJson('/catalog/movie/torrentz_xxx/search=Cache%20Test.json');
+
+    assert.equal(calls, 1);
+    assert.equal(first.body.metas.length, 1);
+    assert.deepEqual(second.body.metas, first.body.metas);
+  } finally {
+    scrapers.searchAll = original;
+  }
+});
+
+test('grouped IDs still resolve after an in-memory cache reset', async () => {
+  const original = scrapers.searchAll;
+  const groupId = Buffer.from('blacked blair williams in the moment|||').toString('base64url');
+
+  scrapers.searchAll = async () => ([
+    {
+      rawTitle: 'Blacked - Blair Williams - In The Moment 1080p',
+      infoHash: 'i'.repeat(40),
+      sizeBytes: 2048,
+      seeders: 10,
+      source: 'tpb'
+    },
+    {
+      rawTitle: 'Blacked - Blair Williams - In The Moment 720p',
+      infoHash: 'j'.repeat(40),
+      sizeBytes: 1024,
+      seeders: 5,
+      source: 'tpb'
+    }
+  ]);
+
+  try {
+    const { status, body } = await getJson(`/stream/movie/${encodeURIComponent(`torrentz-group:${groupId}`)}.json`);
+
+    assert.equal(status, 200);
+    assert.equal(body.streams.length, 2);
+    assert.deepEqual(body.streams.map(stream => stream.name), ['[P2P] 1080p', '[P2P] 720p']);
   } finally {
     scrapers.searchAll = original;
   }

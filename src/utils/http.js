@@ -113,11 +113,14 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
-// One transparent retry for transient GET failures.
+// One transparent retry for transient GET failures, but never retry a
+// timeout: that would double the latency of already-slow providers.
 client.interceptors.response.use(null, async (error) => {
   const config = error.config || {};
   const status = error.response?.status;
-  const retryable = !error.response || status === 429 || status >= 500;
+  const code = error.code || '';
+  const timedOut = code === 'ECONNABORTED' || code === 'ETIMEDOUT' || /timeout/i.test(error.message || '');
+  const retryable = !timedOut && (!error.response || status === 429 || status >= 500);
 
   if (!retryable || config.method !== 'get' || (config._retryCount || 0) >= 1) {
     return Promise.reject(error);
