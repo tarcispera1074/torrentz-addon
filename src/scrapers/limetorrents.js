@@ -15,9 +15,10 @@ async function searchLimeTorrents(query) {
 
     try {
       const url = `${domain}/search/all/${encodeURIComponent(query)}/`;
-      const res = await requestHtml(url, { timeout: 3000 });
+      const res = await requestHtml(url, { timeout: 4500 });
       if (!res.data || res.status !== 200) {
         mirrors.markFailure(domain);
+        console.warn(`[LimeTorrents] ${domain} returned HTTP ${res.status || 'no response'}`);
         continue;
       }
 
@@ -70,6 +71,7 @@ async function searchLimeTorrents(query) {
       if (results.length > 0) return results;
     } catch (e) {
       mirrors.markFailure(domain);
+      console.warn(`[LimeTorrents] ${domain} request failed: ${e.response?.status || e.code || 'network error'}`);
     }
   }
   return results;

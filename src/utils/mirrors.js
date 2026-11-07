@@ -1,5 +1,6 @@
 const FAILURE_THRESHOLD = 3;
-const COOLDOWN_MS = 5 * 60 * 1000;
+// Keep transient failures from hiding a source for most of a user session.
+const COOLDOWN_MS = 60 * 1000;
 
 const failures = new Map();
 

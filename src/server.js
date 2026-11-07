@@ -804,7 +804,7 @@ async function handleStreams(req, res, configStr) {
           config.providers
         );
         const cached = cache.get(cacheKey);
-        const candidateTorrents = cached || await scrapers.searchAll(candidate.query, config.providers, { timeoutMs: 5000 });
+        const candidateTorrents = cached || await scrapers.searchAll(candidate.query, config.providers, { timeoutMs: 10000 });
         if (!cached) cache.set(cacheKey, candidateTorrents, STREAM_TTL);
 
         torrents = candidateTorrents.filter(torrent => isMetadataTorrentRelevant(metadataScene, torrent));
