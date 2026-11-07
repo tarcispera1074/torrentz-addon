@@ -98,3 +98,35 @@ test('findScene loads a scene by source-specific ID', async () => {
     cache.clear();
   }
 });
+
+test('checkApiKey uses a minimal read-only scene query and never caches the result', async () => {
+  let seenApiKey;
+  const restore = installAdapter(config => {
+    seenApiKey = config.headers?.get?.('ApiKey') || config.headers?.ApiKey;
+    const body = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+    assert.match(body.query, /searchScenes/);
+    assert.equal(body.variables.limit, 1);
+    return { data: { data: { searchScenes: { scenes: [] } } } };
+  });
+
+  try {
+    const result = await stashbox.checkApiKey('tpdb', 'read-only-token');
+    assert.deepEqual(result, { valid: true, message: 'API key works; read access confirmed.' });
+    assert.equal(seenApiKey, 'read-only-token');
+  } finally {
+    restore();
+  }
+});
+
+test('checkApiKey rejects GraphQL authentication errors returned with HTTP 200', async () => {
+  const restore = installAdapter(() => ({
+    data: { errors: [{ message: 'Authentication required: invalid API key' }] }
+  }));
+
+  try {
+    const result = await stashbox.checkApiKey('stashdb', 'bad-token');
+    assert.deepEqual(result, { valid: false, message: 'Key rejected or missing read permission.' });
+  } finally {
+    restore();
+  }
+});

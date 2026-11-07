@@ -20,12 +20,16 @@ const cache = require('./utils/cache');
 const app = express();
 app.set('trust proxy', true);
 app.use(cors());
+app.use(express.json({ limit: '8kb' }));
 
 const CATALOG_TORRENT_TTL = 24 * 60 * 60 * 1000;
 const CATALOG_TTL = 10 * 60 * 1000;
 const EMPTY_CATALOG_TTL = 2 * 60 * 1000;
 const STREAM_TTL = 15 * 60 * 1000;
 const DEBRID_FLAGS_TTL = 10 * 60 * 1000;
+const METADATA_CHECK_WINDOW_MS = 60 * 1000;
+const METADATA_CHECK_LIMIT = 15;
+const metadataCheckRate = new Map();
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -375,6 +379,39 @@ function toStremioStream(stream) {
 
 // 1. Health check, debug & configuration UI
 app.get('/healthz', (req, res) => res.status(200).json({ status: 'ok' }));
+
+app.post('/metadata/check', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  let rate = metadataCheckRate.get(clientIp);
+  if (!rate || now >= rate.resetAt) {
+    rate = { count: 0, resetAt: now + METADATA_CHECK_WINDOW_MS };
+  }
+  rate.count += 1;
+  metadataCheckRate.set(clientIp, rate);
+  if (metadataCheckRate.size > 1000) {
+    for (const [ip, entry] of metadataCheckRate) {
+      if (now >= entry.resetAt) metadataCheckRate.delete(ip);
+    }
+  }
+  if (rate.count > METADATA_CHECK_LIMIT) {
+    return res.status(429).json({ valid: false, message: 'Too many key checks. Wait a minute and try again.' });
+  }
+
+  const source = String(req.body?.source || '').trim().toLowerCase();
+  const apiKey = typeof req.body?.apiKey === 'string' ? req.body.apiKey.trim() : '';
+
+  if (!stashbox.SOURCES[source]) {
+    return res.status(400).json({ valid: false, message: 'Unknown metadata source.' });
+  }
+  if (!apiKey || apiKey.length > 512) {
+    return res.status(400).json({ valid: false, message: 'Enter a valid API key (maximum 512 characters).' });
+  }
+
+  const result = await stashbox.checkApiKey(source, apiKey);
+  res.json(result);
+});
 
 app.get('/test-raw-tpb', async (req, res) => {
   const axios = require('axios');

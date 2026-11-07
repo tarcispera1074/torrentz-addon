@@ -213,6 +213,41 @@
       margin-top: 0.8rem;
     }
 
+    .metadata-check-row {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      margin-top: 0.7rem;
+      flex-wrap: wrap;
+    }
+
+    .metadata-test-button {
+      background: transparent;
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      color: var(--text);
+      cursor: pointer;
+      padding: 0.45rem 0.7rem;
+    }
+
+    .metadata-test-button:disabled {
+      cursor: wait;
+      opacity: 0.6;
+    }
+
+    .metadata-test-status {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .metadata-test-status.success {
+      color: var(--success);
+    }
+
+    .metadata-test-status.error {
+      color: #ff758f;
+    }
+
     .input-group {
       margin-top: 0.75rem;
     }
@@ -350,6 +385,10 @@
             <br><a href="https://api.theporndb.net/docs" target="_blank" rel="noopener">API documentation</a>
           </div>
         </div>
+        <div class="metadata-check-row">
+          <button type="button" class="metadata-test-button" id="metadata-test-tpdb" onclick="testMetadataApiKey('tpdb')">Test API key</button>
+          <span class="metadata-test-status" id="metadata-status-tpdb" role="status" aria-live="polite"></span>
+        </div>
         <label class="checkbox-label metadata-source-toggle"><input type="checkbox" id="metadata-source-tpdb"><span>Enable ThePornDB catalog</span></label>
       </div>
 
@@ -361,6 +400,10 @@
             Account and invite may be required. Register at <a href="https://stashdb.org/" target="_blank" rel="noopener">stashdb.org</a>, then open your profile to copy the API key. Read access is enough.
             <br><a href="https://guidelines.stashdb.org/docs/faq_getting-started/stashdb/accessing-stashdb/" target="_blank" rel="noopener">Access instructions</a>
           </div>
+        </div>
+        <div class="metadata-check-row">
+          <button type="button" class="metadata-test-button" id="metadata-test-stashdb" onclick="testMetadataApiKey('stashdb')">Test API key</button>
+          <span class="metadata-test-status" id="metadata-status-stashdb" role="status" aria-live="polite"></span>
         </div>
         <label class="checkbox-label metadata-source-toggle"><input type="checkbox" id="metadata-source-stashdb"><span>Enable StashDB catalog</span></label>
       </div>
@@ -374,6 +417,10 @@
             <br><a href="https://javstash.org/" target="_blank" rel="noopener">JAVStash website</a>
           </div>
         </div>
+        <div class="metadata-check-row">
+          <button type="button" class="metadata-test-button" id="metadata-test-javstash" onclick="testMetadataApiKey('javstash')">Test API key</button>
+          <span class="metadata-test-status" id="metadata-status-javstash" role="status" aria-live="polite"></span>
+        </div>
         <label class="checkbox-label metadata-source-toggle"><input type="checkbox" id="metadata-source-javstash"><span>Enable JAVStash catalog</span></label>
       </div>
 
@@ -386,6 +433,10 @@
             <br><a href="https://pmvstash.org/" target="_blank" rel="noopener">PMV Stash website</a>
           </div>
         </div>
+        <div class="metadata-check-row">
+          <button type="button" class="metadata-test-button" id="metadata-test-pmvstash" onclick="testMetadataApiKey('pmvstash')">Test API key</button>
+          <span class="metadata-test-status" id="metadata-status-pmvstash" role="status" aria-live="polite"></span>
+        </div>
         <label class="checkbox-label metadata-source-toggle"><input type="checkbox" id="metadata-source-pmvstash"><span>Enable PMV Stash catalog</span></label>
       </div>
 
@@ -397,6 +448,10 @@
             Invite/application required. Apply through the <a href="https://docs.fansdb.cc/" target="_blank" rel="noopener">FansDB documentation</a>; after approval, copy the API key from your profile.
             <br><a href="https://fansdb.cc/" target="_blank" rel="noopener">FansDB website</a>
           </div>
+        </div>
+        <div class="metadata-check-row">
+          <button type="button" class="metadata-test-button" id="metadata-test-fansdb" onclick="testMetadataApiKey('fansdb')">Test API key</button>
+          <span class="metadata-test-status" id="metadata-status-fansdb" role="status" aria-live="polite"></span>
         </div>
         <label class="checkbox-label metadata-source-toggle"><input type="checkbox" id="metadata-source-fansdb"><span>Enable FansDB catalog</span></label>
       </div>
@@ -575,6 +630,43 @@
         help.innerHTML = providerKeyLinks[val] || '';
       }
       updateInstallLink();
+    }
+
+    async function testMetadataApiKey(source) {
+      const input = document.getElementById(`metadata-key-${source}`);
+      const button = document.getElementById(`metadata-test-${source}`);
+      const status = document.getElementById(`metadata-status-${source}`);
+      const apiKey = input.value.trim();
+
+      status.className = 'metadata-test-status';
+      if (!apiKey) {
+        status.textContent = 'Enter a key first.';
+        status.classList.add('error');
+        input.focus();
+        return;
+      }
+
+      button.disabled = true;
+      button.textContent = 'Checking…';
+      status.textContent = 'Testing read access…';
+
+      try {
+        const response = await fetch('/metadata/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify({ source, apiKey })
+        });
+        const result = await response.json();
+        status.textContent = result.message || (result.valid ? 'API key works.' : 'API key check failed.');
+        status.classList.add(result.valid ? 'success' : 'error');
+      } catch (error) {
+        status.textContent = 'Could not contact the addon server. Try again.';
+        status.classList.add('error');
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Test API key';
+      }
     }
 
     function setAllProviders(selected) {

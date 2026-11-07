@@ -72,6 +72,18 @@ const FIND_SCENE_QUERY = `
   }
 `;
 
+const CHECK_ACCESS_QUERY = `
+  query CheckStashBoxReadAccess($term: String!, $limit: Int) {
+    searchScenes(term: $term, limit: $limit) { scenes { id } }
+  }
+`;
+
+const LEGACY_CHECK_ACCESS_QUERY = `
+  query CheckStashBoxReadAccess($term: String!, $limit: Int) {
+    searchScene(term: $term, limit: $limit) { id }
+  }
+`;
+
 function tokenFingerprint(token) {
   return createHash('sha256').update(String(token)).digest('hex').slice(0, 16);
 }
@@ -203,10 +215,41 @@ async function getScene(source, token, id) {
   }
 }
 
+async function checkApiKey(source, token) {
+  const provider = SOURCES[source];
+  const apiKey = String(token || '').trim();
+  if (!provider) return { valid: false, message: 'Unknown metadata source.' };
+  if (!apiKey) return { valid: false, message: 'Enter an API key first.' };
+
+  const variables = { term: 'Torrentz API key check', limit: 1 };
+  try {
+    try {
+      const response = await postGraphQL(source, apiKey, CHECK_ACCESS_QUERY, variables);
+      extractScenes(response, 'searchScenes');
+    } catch (error) {
+      if (!isSchemaCompatibilityError(error)) throw error;
+      const response = await postGraphQL(source, apiKey, LEGACY_CHECK_ACCESS_QUERY, variables);
+      extractScenes(response, 'searchScene');
+    }
+    return { valid: true, message: 'API key works; read access confirmed.' };
+  } catch (error) {
+    const status = error.response?.status;
+    const detail = String(error.message || '');
+    if (status === 401 || status === 403 || /unauthori[sz]ed|forbidden|invalid api.?key|invalid token|access denied|read permission|insufficient role/i.test(detail)) {
+      return { valid: false, message: 'Key rejected or missing read permission.' };
+    }
+    if (status) {
+      return { valid: false, message: `Could not verify the key (HTTP ${status}).` };
+    }
+    return { valid: false, message: 'Could not reach this API. Check the endpoint or try again.' };
+  }
+}
+
 module.exports = {
   SOURCES,
   search,
   getScene,
+  checkApiKey,
   normalizeScene,
   searchCacheKey,
   sceneCacheKey

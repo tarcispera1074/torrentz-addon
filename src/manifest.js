@@ -1,7 +1,7 @@
 const { DEFAULT_CONFIG } = require('./config');
 const debrid = require('./debrid');
 
-const ADDON_VERSION = '1.2.0';
+const ADDON_VERSION = '1.2.2';
 
 /**
  * Manifest generator supporting split modes: 'movies', 'xxx', 'all'

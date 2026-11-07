@@ -75,7 +75,7 @@ test('serves the dynamic manifest with the shared version', async () => {
   const { status, body } = await getJson('/manifest.json');
 
   assert.equal(status, 200);
-  assert.equal(body.version, '1.2.0');
+  assert.equal(body.version, '1.2.2');
   assert.equal(body.id, 'community.torrentz.addon');
   assert.deepEqual(body.resources, ['catalog', 'meta', 'stream']);
   assert.ok(body.idPrefixes.includes('torrentz-group:'));
@@ -95,6 +95,7 @@ test('configuration page exposes both provider actions and the manifest URL', as
   for (const source of ['tpdb', 'stashdb', 'javstash', 'pmvstash', 'fansdb']) {
     assert.match(html, new RegExp(`metadata-key-${source}`));
     assert.match(html, new RegExp(`metadata-source-${source}`));
+    assert.match(html, new RegExp(`metadata-test-${source}`));
   }
   assert.match(html, /Adult Metadata Catalogs/);
   assert.match(html, /Base64 is not encryption/);
@@ -111,6 +112,29 @@ test('configured Stash-Box sources add the adult metadata catalog to the manifes
   assert.ok(body.catalogs.some(catalog => catalog.id === 'torrentz_xxx' && catalog.name === 'Adult Scenes'));
   assert.ok(body.idPrefixes.includes('tpdb-scene:'));
   assert.ok(body.idPrefixes.includes('fansdb-scene:'));
+});
+
+test('metadata API key test endpoint validates a key without returning it', async () => {
+  const original = stashbox.checkApiKey;
+  stashbox.checkApiKey = async (source, apiKey) => ({
+    valid: source === 'tpdb' && apiKey === 'test-token',
+    message: 'API key works; read access confirmed.'
+  });
+
+  try {
+    const response = await fetch(`${baseUrl}/metadata/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: 'tpdb', apiKey: 'test-token' })
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.valid, true);
+    assert.equal(JSON.stringify(body).includes('test-token'), false);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+  } finally {
+    stashbox.checkApiKey = original;
+  }
 });
 
 test('groups same-title releases and orders them by quality', async () => {
