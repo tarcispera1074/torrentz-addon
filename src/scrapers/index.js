@@ -92,7 +92,9 @@ async function searchAll(query, enabledProviders = ['tpb', '1337x', 'limetorrent
   const active = resolveScrapers(enabledProviders || []);
   const timeoutMs = Number.isFinite(options.timeoutMs)
     ? Math.max(1000, Math.min(20000, options.timeoutMs))
-    : DEFAULT_SEARCH_TIMEOUT_MS;
+    // Large selections commonly include blocked/login-only sites. Return
+    // partial results sooner instead of making the client wait for every one.
+    : (active.length > 4 ? 5000 : DEFAULT_SEARCH_TIMEOUT_MS);
 
   const cacheKey = `${String(query).trim().toLowerCase()}|${active.map(e => e.id).sort().join(',')}`;
   const existing = inFlightSearches.get(cacheKey);
