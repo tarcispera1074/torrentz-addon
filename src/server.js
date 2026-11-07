@@ -191,23 +191,33 @@ async function getMetadataSceneRecords(parsedId, config) {
   return [scene];
 }
 
-function metadataTorrentQuery(scene) {
+function metadataTorrentQueries(scene) {
   const code = String(scene.code || '').trim();
   // Prefer DVD-style release codes (e.g. SSIS-001). Many web-scene databases
   // populate `code` with an internal numeric ID that torrent titles won't use.
-  if (/^[A-Z0-9]{2,12}-\d{2,6}$/i.test(code)) return code.slice(0, 120);
+  const queries = [];
+  if (/^[A-Z0-9]{2,12}-\d{2,6}$/i.test(code)) {
+    queries.push({ query: code.slice(0, 120), matchKind: 'code' });
+  }
   const title = String(scene.title || '').trim();
   const normalizedTitle = normalizeTitle(title);
   const performer = (scene.performers || []).find(name => {
     const normalizedPerformer = normalizeTitle(name);
     return normalizedPerformer && normalizedTitle.includes(normalizedPerformer);
-  }) ? '' : scene.performers?.[0];
-  return [title, performer].filter(Boolean).join(' ').slice(0, 160);
+  }) || scene.performers?.[0];
+
+  if (title) queries.push({ query: title.slice(0, 160), matchKind: 'title' });
+  if (performer) queries.push({ query: String(performer).slice(0, 120), matchKind: 'performer' });
+  return [...new Map(queries.map(item => [item.query.toLowerCase(), item])).values()];
 }
 
-function addTorrentSourceBadge(stream) {
+function addTorrentSourceBadge(stream, matchKind = 'title') {
   const source = String(stream.source || '').replace(/[\[\]\r\n]/g, '').slice(0, 40);
-  if (source) stream.name = stream.name.replace(/^([^\s]+)\s+/, `$1 [${source}] `);
+  const badges = [source, ...(matchKind === 'performer' ? ['Performer match'] : [])].filter(Boolean);
+  if (badges.length) stream.name = stream.name.replace(/^([^\s]+)\s+/, `$1 [${badges.join('] [')}] `);
+  if (matchKind === 'performer') {
+    stream.title += '\n⚠ Performer match only; verify this is the same scene.';
+  }
   return stream;
 }
 
@@ -669,6 +679,7 @@ async function handleStreams(req, res, configStr) {
   try {
     let torrents = [];
     let metadataScene = null;
+    let metadataMatchKind = 'title';
 
     // Case A: Stream requested from a Stash-Box catalog scene.
     const metadataId = parseMetadataSceneId(id);
@@ -677,15 +688,31 @@ async function handleStreams(req, res, configStr) {
       metadataScene = records.find(record => record.provider === metadataId.source) || records[0] || null;
       if (!metadataScene) return res.json({ streams: [] });
 
-      const searchQuery = metadataTorrentQuery(metadataScene);
-      if (!searchQuery) return res.json({ streams: [] });
+      const candidates = metadataTorrentQueries(metadataScene);
+      if (candidates.length === 0) return res.json({ streams: [] });
       console.log(`[Stream] Searching torrent providers for metadata scene "${metadataScene.title}"`);
 
-      const cacheKey = streamsCacheKey('movie', `scene:${metadataScene.provider}:${searchQuery}`, config.providers);
-      torrents = cache.get(cacheKey);
-      if (!torrents) {
-        torrents = await scrapers.searchAll(searchQuery, config.providers);
-        cache.set(cacheKey, torrents, STREAM_TTL);
+      for (const candidate of candidates) {
+        const cacheKey = streamsCacheKey(
+          'movie',
+          `scene:${metadataScene.provider}:${candidate.matchKind}:${candidate.query}`,
+          config.providers
+        );
+        const cached = cache.get(cacheKey);
+        const candidateTorrents = cached || await scrapers.searchAll(candidate.query, config.providers, { timeoutMs: 5000 });
+        if (!cached) cache.set(cacheKey, candidateTorrents, STREAM_TTL);
+
+        if (candidate.matchKind === 'performer') {
+          const performer = normalizeTitle(candidate.query);
+          torrents = candidateTorrents.filter(torrent => normalizeTitle(torrent.rawTitle).includes(performer));
+        } else {
+          torrents = candidateTorrents;
+        }
+
+        if (torrents.length > 0) {
+          metadataMatchKind = candidate.matchKind;
+          break;
+        }
       }
     }
     // Case B: Stream requested from a grouped torrent catalog item.
@@ -782,16 +809,16 @@ async function handleStreams(req, res, configStr) {
             debridProvider: config.debridProvider.toUpperCase()
           });
           formatted.url = `${protocol}://${host}/playback/${encodeURIComponent(configStr)}/${torrent.infoHash}`;
-          if (metadataScene) addTorrentSourceBadge(formatted);
+          if (metadataScene) addTorrentSourceBadge(formatted, metadataMatchKind);
           formattedStreams.push(formatted);
         } else if (config.showP2PFallback) {
           const formatted = formatStream(base);
-          if (metadataScene) addTorrentSourceBadge(formatted);
+          if (metadataScene) addTorrentSourceBadge(formatted, metadataMatchKind);
           formattedStreams.push(formatted);
         }
       } else {
         const formatted = formatStream(base);
-        if (metadataScene) addTorrentSourceBadge(formatted);
+        if (metadataScene) addTorrentSourceBadge(formatted, metadataMatchKind);
         formattedStreams.push(formatted);
       }
     }

@@ -75,7 +75,7 @@ test('serves the dynamic manifest with the shared version', async () => {
   const { status, body } = await getJson('/manifest.json');
 
   assert.equal(status, 200);
-  assert.equal(body.version, '1.3.2');
+  assert.equal(body.version, '1.3.3');
   assert.equal(body.id, 'community.torrentz.addon');
   assert.deepEqual(body.resources, ['catalog', 'meta', 'stream']);
   assert.deepEqual(body.types, ['movie']);
@@ -349,6 +349,7 @@ test('metadata catalogs search independently and route matching torrents with so
   const originalScrape = scrapers.searchAll;
   const query = 'Scene Integration Test 2025';
   const searchedSources = [];
+  const torrentQueries = [];
   const config = encodeConfig({
     providers: ['tpb', '1337x'],
     metadataSources: ['tpdb', 'stashdb'],
@@ -371,17 +372,19 @@ test('metadata catalogs search independently and route matching torrents with so
     }];
   };
   scrapers.searchAll = async searchQuery => {
-    assert.equal(searchQuery, 'Scene Integration Test Example Performer');
+    torrentQueries.push(searchQuery);
+    if (searchQuery === 'Scene Integration Test') return [];
+    assert.equal(searchQuery, 'Example Performer');
     return [
       {
-        rawTitle: 'Scene.Integration.Test.Example.Performer.1080p.WEB-DL',
+        rawTitle: 'Example.Performer.Scene.1080p.WEB-DL',
         infoHash: 'k'.repeat(40),
         sizeBytes: 2 * 1024 * 1024 * 1024,
         seeders: 30,
         source: 'ThePirateBay'
       },
       {
-        rawTitle: 'Scene.Integration.Test.Example.Performer.720p.WEB-DL',
+        rawTitle: 'Example.Performer.Scene.720p.WEB-DL',
         infoHash: 'l'.repeat(40),
         sizeBytes: 800 * 1024 * 1024,
         seeders: 20,
@@ -413,6 +416,9 @@ test('metadata catalogs search independently and route matching torrents with so
     assert.equal(streams.body.streams.length, 2);
     assert.match(streams.body.streams[0].name, /\[ThePirateBay\]/);
     assert.match(streams.body.streams[1].name, /\[1337x\]/);
+    assert.ok(streams.body.streams.every(stream => stream.name.includes('[Performer match]')));
+    assert.ok(streams.body.streams.every(stream => stream.title.includes('Performer match only')));
+    assert.deepEqual(torrentQueries, ['Scene Integration Test', 'Example Performer']);
     assert.ok(streams.body.streams.every(stream => stream.title.startsWith('Scene Integration Test')));
   } finally {
     stashbox.search = originalSearch;
