@@ -134,29 +134,6 @@ async function resolveTubeItem(siteId, item, matchKind, matchQuery) {
   }
 }
 
-function parseTubeItemId(id) {
-  const match = String(id || '').match(/^tube:([^:]+):.+$/);
-  return match && TUBE_SITE_IDS.includes(match[1]) ? { siteId: match[1], id: String(id) } : null;
-}
-
-async function getCatalogItemMeta(id) {
-  const parsed = parseTubeItemId(id);
-  if (!parsed) return null;
-  try {
-    const url = `${baseUrl()}/meta/movie/${encodeURIComponent(parsed.id)}.json`;
-    const response = await client.get(url, { timeout: REQUEST_TIMEOUT_MS });
-    return response.data?.meta || null;
-  } catch {
-    return null;
-  }
-}
-
-async function resolveCatalogItem(id, name = 'Direct video') {
-  const parsed = parseTubeItemId(id);
-  if (!parsed) return [];
-  return resolveTubeItem(parsed.siteId, { id: parsed.id, name }, 'catalog', '');
-}
-
 async function searchAndResolve(siteIds, query, matchKind, scene) {
   const catalogResults = await Promise.all(siteIds.map(async siteId => ({
     siteId,
@@ -215,9 +192,6 @@ module.exports = {
   DEFAULT_TUBEHUB_URL,
   searchSite,
   searchForScene,
-  parseTubeItemId,
-  getCatalogItemMeta,
-  resolveCatalogItem,
   exactTitleMatch,
   keywordMatch,
   sceneKeywordMatch

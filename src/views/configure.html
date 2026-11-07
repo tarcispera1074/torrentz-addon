@@ -212,6 +212,32 @@
       color: #ff758f;
     }
 
+    .tube-install-links {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.55rem;
+      margin-top: 0.65rem;
+    }
+
+    .tube-install-link {
+      display: block;
+      overflow: hidden;
+      padding: 0.6rem 0.7rem;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.03);
+      font-size: 0.8rem;
+      text-decoration: none;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tube-install-link:hover {
+      border-color: var(--accent);
+      background: rgba(108, 92, 231, 0.12);
+    }
+
     .input-group {
       margin-top: 0.75rem;
     }
@@ -404,7 +430,7 @@
     <div class="section" id="tubeSitesSection">
       <div class="section-title">Direct Video Sites (TubeHub)</div>
       <div class="helper-text" style="margin-bottom: 0.8rem;">
-        These add direct video-stream options alongside torrents. Each selected site is searched for the exact metadata title first, then metadata keywords. Keyword matches are labeled. These are not TorBox downloads.
+        Select sites to create separate Nuvio addons/source tabs. They search the exact metadata title first, then try metadata keywords. Keyword matches are labeled; direct streams are proxied and are not TorBox downloads.
       </div>
       <div class="provider-actions" aria-label="Direct video site selection actions">
         <button type="button" class="provider-action" onclick="setAllTubeSites(true)">Select all</button>
@@ -437,6 +463,10 @@
         <label class="checkbox-label"><input type="checkbox" id="tubesite-letsporn" value="letsporn"><span>LetsPorn</span></label>
         <label class="checkbox-label"><input type="checkbox" id="tubesite-porn300" value="porn300"><span>Porn300</span></label>
       </div>
+      <div class="helper-text" style="margin-top: 0.75rem;">
+        Install each selected site below. Each installs as a separate addon and gets its own source tab in Nuvio’s stream screen.
+      </div>
+      <div id="tubeInstallLinks" class="tube-install-links" aria-live="polite"></div>
     </div>
 
     <!-- Torrent Providers -->
@@ -563,6 +593,34 @@
       premiumize: '<a href="https://www.premiumize.me/account" target="_blank" rel="noopener">Find your Premiumize API Pin/Key here</a>',
       torbox: '<a href="https://torbox.app/settings" target="_blank" rel="noopener">Find your TorBox API Token in Account Settings</a>',
       debridlink: '<a href="https://debrid-link.com/webapp/register" target="_blank" rel="noopener">Get your Debrid-Link API Key here</a>'
+    };
+
+    const tubeSiteLabels = {
+      pornhub: 'Pornhub (HD)',
+      pornhub_4k: 'Pornhub (4K)',
+      xhamster: 'xHamster (HD)',
+      xhamster_4k: 'xHamster (4K)',
+      xvideos: 'xVideos (HD)',
+      tnaflix: 'TnaFlix',
+      justporn: 'JustPorn',
+      handjobhub: 'HandjobHub',
+      okxxx: 'OK.xxx',
+      xgroovy: 'XGroovy',
+      theyarehuge: 'TheyAreHuge',
+      pornid: 'PornID',
+      zbporn: 'ZbPorn',
+      megatube: 'MegaTube',
+      shameless: 'Shameless',
+      superporn: 'SuperPorn',
+      pornone: 'PornOne',
+      redtube: 'RedTube (HD)',
+      redtube_4k: 'RedTube (4K)',
+      youporn: 'YouPorn (HD)',
+      youporn_4k: 'YouPorn (4K)',
+      tube8: 'Tube8 (HD)',
+      tube8_4k: 'Tube8 (4K)',
+      letsporn: 'LetsPorn',
+      porn300: 'Porn300'
     };
 
     function toggleDebridFields() {
@@ -701,12 +759,38 @@
       return `${origin}/${encoded}/manifest.json`;
     }
 
+    function updateTubeInstallLinks(encodedConfig) {
+      const container = document.getElementById('tubeInstallLinks');
+      const selected = [...document.querySelectorAll('input[id^="tubesite-"]:checked')].map(input => input.value);
+      container.replaceChildren();
+
+      if (selected.length === 0) {
+        container.textContent = 'Select at least one site to create its Nuvio source tab.';
+        return;
+      }
+
+      const token = encodedConfig || getEncodedConfig();
+      const origin = window.location.origin;
+      selected.forEach(site => {
+        const url = `${origin}/${token}/tube/${site}/manifest.json`;
+        const link = document.createElement('a');
+        link.className = 'tube-install-link';
+        link.href = url.replace(/^https?:\/\//i, 'stremio://');
+        link.textContent = `Install ${tubeSiteLabels[site] || site} tab`;
+        link.title = url;
+        container.appendChild(link);
+      });
+    }
+
     function updateInstallLink() {
-      const url = getManifestUrl();
+      const encoded = getEncodedConfig();
+      const origin = window.location.origin;
+      const url = `${origin}/${encoded}/manifest.json`;
       const stremioProtocolUrl = url.replace(/^https?:\/\//i, 'stremio://');
       const installBtn = document.getElementById('installBtn');
       installBtn.href = stremioProtocolUrl;
       document.getElementById('manifestUrl').value = url;
+      updateTubeInstallLinks(encoded);
     }
 
     function copyManifestUrl() {

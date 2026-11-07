@@ -2,7 +2,7 @@ const { DEFAULT_CONFIG } = require('./config');
 const debrid = require('./debrid');
 const { TUBE_SITES } = require('./streaming/tube-sites');
 
-const ADDON_VERSION = '1.4.1';
+const ADDON_VERSION = '1.4.2';
 
 const METADATA_CATALOGS = [
   { source: 'tpdb', label: 'PornDB' },
@@ -26,19 +26,6 @@ function createManifest(config = DEFAULT_CONFIG) {
       name: `Torrentz: ${label}`,
       extra: [{ name: 'search', isRequired: false }]
     }));
-  for (const siteId of config.tubeSites || []) {
-    const label = TUBE_SITES[siteId];
-    if (!label) continue;
-    catalogs.push({
-      type: 'movie',
-      id: `torrentz_tube_${siteId}`,
-      name: `Torrentz: ${label}`,
-      extra: [
-        { name: 'search', isRequired: false },
-        { name: 'skip', isRequired: false }
-      ]
-    });
-  }
 
   const id = 'community.torrentz.addon';
   let name = 'Torrentz';
@@ -61,7 +48,6 @@ function createManifest(config = DEFAULT_CONFIG) {
       'tt',
       'torrentz:',
       'torrentz-group:',
-      'tube:',
       'tpdb-scene:',
       'stashdb-scene:',
       'javstash-scene:',
@@ -76,8 +62,32 @@ function createManifest(config = DEFAULT_CONFIG) {
   };
 }
 
+/** A stream addon per TubeHub site so Nuvio displays a separate source tab. */
+function createTubeSiteManifest(config = DEFAULT_CONFIG, siteId) {
+  const siteName = TUBE_SITES[siteId];
+  if (!siteName || !(config.tubeSites || []).includes(siteId)) return null;
+
+  return {
+    id: `community.torrentz.tube.${siteId}`,
+    version: ADDON_VERSION,
+    name: siteName,
+    description: `Direct video streams from ${siteName}`,
+    resources: ['stream'],
+    types: ['movie'],
+    idPrefixes: [
+      'tpdb-scene:',
+      'stashdb-scene:',
+      'javstash-scene:',
+      'pmvstash-scene:',
+      'fansdb-scene:'
+    ],
+    behaviorHints: { configurable: true, configurationRequired: false }
+  };
+}
+
 module.exports = {
   ADDON_VERSION,
   METADATA_CATALOGS,
-  createManifest
+  createManifest,
+  createTubeSiteManifest
 };

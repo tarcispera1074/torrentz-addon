@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { DEFAULT_CONFIG } = require('../../src/config');
-const { createManifest, ADDON_VERSION } = require('../../src/manifest');
+const { createManifest, createTubeSiteManifest, ADDON_VERSION } = require('../../src/manifest');
 
 test('default manifest is valid and uses the shared version constant', () => {
   const manifest = createManifest(DEFAULT_CONFIG);
@@ -10,13 +10,7 @@ test('default manifest is valid and uses the shared version constant', () => {
   assert.equal(manifest.id, 'community.torrentz.addon');
   assert.deepEqual(manifest.resources, ['catalog', 'meta', 'stream']);
   assert.deepEqual(manifest.types, ['movie']);
-  assert.deepEqual(manifest.catalogs.map(catalog => catalog.name), [
-    'Torrentz: xHamster (HD)',
-    'Torrentz: xVideos (HD)',
-    'Torrentz: RedTube (HD)',
-    'Torrentz: YouPorn (HD)',
-    'Torrentz: Tube8 (HD)'
-  ]);
+  assert.deepEqual(manifest.catalogs, []);
   assert.equal(manifest.behaviorHints.configurable, true);
 });
 
@@ -39,16 +33,22 @@ test('porn-only manifest exposes a distinct catalog for each enabled keyed sourc
     'Torrentz: StashDB',
     'Torrentz: JAVStash',
     'Torrentz: PMV Stash',
-    'Torrentz: FansDB',
-    'Torrentz: xHamster (HD)',
-    'Torrentz: xHamster (4K)'
+    'Torrentz: FansDB'
   ]);
-  assert.equal(new Set(manifest.catalogs.map(catalog => catalog.id)).size, 7);
-  assert.deepEqual(
-    manifest.catalogs.slice(-2).map(catalog => catalog.name),
-    ['Torrentz: xHamster (HD)', 'Torrentz: xHamster (4K)']
-  );
+  assert.equal(new Set(manifest.catalogs.map(catalog => catalog.id)).size, 5);
   assert.ok(manifest.idPrefixes.includes('tpdb-scene:'));
+});
+
+test('each selected direct video site gets its own installable addon manifest', () => {
+  const config = { ...DEFAULT_CONFIG, tubeSites: ['xhamster', 'xhamster_4k'] };
+  const hd = createTubeSiteManifest(config, 'xhamster');
+  const uhd = createTubeSiteManifest(config, 'xhamster_4k');
+
+  assert.equal(hd.name, 'xHamster (HD)');
+  assert.equal(uhd.name, 'xHamster (4K)');
+  assert.notEqual(hd.id, uhd.id);
+  assert.ok(hd.idPrefixes.includes('stashdb-scene:'));
+  assert.equal(createTubeSiteManifest(config, 'redtube'), null);
 });
 
 test('manifest name includes the Debrid provider name', () => {

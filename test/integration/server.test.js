@@ -76,7 +76,7 @@ test('serves the dynamic manifest with the shared version', async () => {
   const { status, body } = await getJson('/manifest.json');
 
   assert.equal(status, 200);
-  assert.equal(body.version, '1.4.1');
+  assert.equal(body.version, '1.4.2');
   assert.equal(body.id, 'community.torrentz.addon');
   assert.deepEqual(body.resources, ['catalog', 'meta', 'stream']);
   assert.deepEqual(body.types, ['movie']);
@@ -102,6 +102,7 @@ test('configuration page exposes both provider actions and the manifest URL', as
   assert.match(html, /Adult Metadata Catalogs/);
   assert.match(html, /Base64 is not encryption/);
   assert.match(html, /Direct Video Sites \(TubeHub\)/);
+  assert.match(html, /tubeInstallLinks/);
   for (const site of ['xhamster', 'xhamster_4k', 'xvideos', 'redtube', 'tube8']) {
     assert.match(html, new RegExp(`tubesite-${site}`));
   }
@@ -117,12 +118,7 @@ test('configured Stash-Box sources add independent named catalogs to the manifes
   assert.equal(status, 200);
   assert.deepEqual(body.catalogs.map(catalog => catalog.name), [
     'Torrentz: PornDB',
-    'Torrentz: StashDB',
-    'Torrentz: xHamster (HD)',
-    'Torrentz: xVideos (HD)',
-    'Torrentz: RedTube (HD)',
-    'Torrentz: YouPorn (HD)',
-    'Torrentz: Tube8 (HD)'
+    'Torrentz: StashDB'
   ]);
   assert.deepEqual(body.catalogs.slice(0, 2).map(catalog => catalog.id), ['torrentz_tpdb', 'torrentz_stashdb']);
   assert.ok(body.idPrefixes.includes('tpdb-scene:'));
@@ -449,49 +445,29 @@ test('metadata catalogs search independently and route matching torrents with so
   }
 });
 
-test('TubeHub source has its own catalog, metadata card, and direct stream route', async () => {
-  const originalSearchSite = tubehub.searchSite;
-  const originalResolve = tubehub.resolveCatalogItem;
+test('each selected TubeHub website has its own stream-only addon manifest', async () => {
   const config = encodeConfig({ tubeSites: ['xhamster'] });
-  const tubeItemId = 'tube:xhamster:https%3A%2F%2Fxhamster.com%2Fvideos%2Fthe-set-up-xh123';
 
-  tubehub.searchSite = async (site, query, skip) => {
-    assert.equal(site, 'xhamster');
-    assert.equal(query, 'The Set Up');
-    assert.equal(skip, 0);
-    return [{ id: tubeItemId, name: 'The Set up', poster: 'https://images.example/tube.jpg' }];
-  };
-  tubehub.resolveCatalogItem = async (id, name) => {
-    assert.equal(id, tubeItemId);
-    assert.equal(name, 'The Set up');
-    return [{ name: 'TubeHub: xHamster (HD)', title: 'Exact title match', url: 'https://tubehub-addon.onrender.com/proxy/video.mp4' }];
-  };
+  const hd = await getJson(`/${config}/tube/xhamster/manifest.json`);
+  const uhd = await getJson(`/${encodeConfig({ tubeSites: ['xhamster', 'xhamster_4k'] })}/tube/xhamster_4k/manifest.json`);
+  const disabled = await getJson(`/${config}/tube/redtube/manifest.json`);
+  const main = await getJson(`/${config}/manifest.json`);
 
-  try {
-    const manifest = await getJson(`/${config}/manifest.json`);
-    assert.ok(manifest.body.catalogs.some(catalog => catalog.id === 'torrentz_tube_xhamster' && catalog.name === 'Torrentz: xHamster (HD)'));
-
-    const catalog = await getJson(`/${config}/catalog/movie/torrentz_tube_xhamster/search=The%20Set%20Up.json`);
-    assert.equal(catalog.body.metas.length, 1);
-    assert.equal(catalog.body.metas[0].id, tubeItemId);
-    assert.equal(catalog.body.metas[0].poster, 'https://images.example/tube.jpg');
-
-    const detail = await getJson(`/${config}/meta/movie/${encodeURIComponent(tubeItemId)}.json`);
-    assert.equal(detail.body.meta.name, 'The Set up');
-
-    const streams = await getJson(`/${config}/stream/movie/${encodeURIComponent(tubeItemId)}.json`);
-    assert.equal(streams.body.streams.length, 1);
-    assert.equal(streams.body.streams[0].name, 'TubeHub: xHamster (HD)');
-  } finally {
-    tubehub.searchSite = originalSearchSite;
-    tubehub.resolveCatalogItem = originalResolve;
-  }
+  assert.equal(hd.status, 200);
+  assert.equal(hd.body.name, 'xHamster (HD)');
+  assert.deepEqual(hd.body.resources, ['stream']);
+  assert.equal(uhd.status, 200);
+  assert.equal(uhd.body.name, 'xHamster (4K)');
+  assert.notEqual(hd.body.id, uhd.body.id);
+  assert.equal(disabled.status, 404);
+  assert.ok(!main.body.catalogs.some(catalog => /xHamster|xVideos|Tube8/.test(catalog.name)));
 });
 
-test('TubeHub video options are returned even when torrent providers have no match', async () => {
+test('site-specific addon returns TubeHub options even when torrent providers have no match', async () => {
   const originalSearch = stashbox.search;
   const originalScrape = scrapers.searchAll;
   const originalTubeSearch = tubehub.searchForScene;
+  const tubeLookups = [];
   const config = encodeConfig({
     providers: ['tpb'],
     metadataSources: ['stashdb'],
@@ -513,7 +489,8 @@ test('TubeHub video options are returned even when torrent providers have no mat
   scrapers.searchAll = async () => [];
   tubehub.searchForScene = async (scene, sites) => {
     assert.equal(scene.title, 'The Set Up');
-    assert.deepEqual(sites, ['xhamster', 'xvideos']);
+    assert.deepEqual(sites, ['xhamster']);
+    tubeLookups.push(sites);
     return [{
       name: 'TubeHub: xHamster (HD)',
       title: '🛡️ auto (HLS)',
@@ -525,11 +502,14 @@ test('TubeHub video options are returned even when torrent providers have no mat
   try {
     const catalog = await getJson(`/${config}/catalog/movie/torrentz_stashdb/search=The%20Set%20Up.json`);
     const sceneId = catalog.body.metas[0].id;
-    const result = await getJson(`/${config}/stream/movie/${encodeURIComponent(sceneId)}.json`);
+    const result = await getJson(`/${config}/tube/xhamster/stream/movie/${encodeURIComponent(sceneId)}.json`);
+    const mainResult = await getJson(`/${config}/stream/movie/${encodeURIComponent(sceneId)}.json`);
 
     assert.equal(result.body.streams.length, 1);
     assert.equal(result.body.streams[0].name, 'TubeHub: xHamster (HD)');
     assert.match(result.body.streams[0].url, /tubehub-addon\.onrender\.com\/proxy/);
+    assert.deepEqual(mainResult.body.streams, []);
+    assert.deepEqual(tubeLookups, [['xhamster']]);
   } finally {
     stashbox.search = originalSearch;
     scrapers.searchAll = originalScrape;
@@ -537,7 +517,7 @@ test('TubeHub video options are returned even when torrent providers have no mat
   }
 });
 
-test('TubeHub site streams are included alongside torrent streams for metadata scenes', async () => {
+test('each site addon streams only its selected TubeHub source for metadata scenes', async () => {
   const originalSearch = stashbox.search;
   const originalScrape = scrapers.searchAll;
   const originalTubeSearch = tubehub.searchForScene;
@@ -575,7 +555,7 @@ test('TubeHub site streams are included alongside torrent streams for metadata s
   try {
     const catalog = await getJson(`/${config}/catalog/movie/torrentz_tpdb/search=Direct%20Site%20Match%20Example.json`);
     const sceneId = catalog.body.metas[0].id;
-    const response = await getJson(`/${config}/stream/movie/${encodeURIComponent(sceneId)}.json`);
+    const response = await getJson(`/${config}/tube/xhamster/stream/movie/${encodeURIComponent(sceneId)}.json`);
     assert.equal(response.body.streams.length, 1);
     assert.equal(response.body.streams[0].name, 'TubeHub: xHamster (HD)');
     assert.match(response.body.streams[0].url, /tubehub-addon\.onrender\.com\/proxy/);

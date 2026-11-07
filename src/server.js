@@ -15,7 +15,7 @@ const {
   normalizeResolution
 } = require('./utils/parser');
 const { streamsCacheKey, debridFlagsCacheKey, normalizeProviders } = require('./utils/cacheKeys');
-const { createManifest } = require('./manifest');
+const { createManifest, createTubeSiteManifest } = require('./manifest');
 const cache = require('./utils/cache');
 
 const app = express();
@@ -78,14 +78,13 @@ function decodeGroupId(value) {
   }
 }
 
-function catalogCacheKey(type, id, query, providers, metadataSources = [], metadataApiKeys = {}, tubeSites = []) {
+function catalogCacheKey(type, id, query, providers, metadataSources = [], metadataApiKeys = {}) {
   const metadataSignature = [...metadataSources]
     .filter(source => metadataApiKeys[source])
     .sort()
     .map(source => `${source}:${createHash('sha256').update(metadataApiKeys[source]).digest('hex').slice(0, 12)}`)
     .join(',');
-  const selectedTubeSites = [...tubeSites].sort().join(',');
-  return `catalog-response:${type}:${id}:${normalizeProviders(providers)}:${metadataSignature}:${selectedTubeSites}:${String(query).trim().toLowerCase()}`;
+  return `catalog-response:${type}:${id}:${normalizeProviders(providers)}:${metadataSignature}:${String(query).trim().toLowerCase()}`;
 }
 
 function groupKeyParts(key) {
@@ -567,22 +566,47 @@ app.get('/:config/manifest.json', (req, res) => {
   res.json(createManifest(config));
 });
 
+app.get('/:config/tube/:site/manifest.json', (req, res) => {
+  const config = decodeConfig(req.params.config);
+  const manifest = createTubeSiteManifest(config, req.params.site);
+  if (!manifest) return res.status(404).json({ error: 'Tube site is not enabled in this install link.' });
+  res.json(manifest);
+});
+
+async function handleTubeSiteStreams(req, res, configStr, siteId) {
+  const config = decodeConfig(configStr);
+  if (!tubehub.TUBE_SITE_IDS.includes(siteId) || !(config.tubeSites || []).includes(siteId)) {
+    return res.json({ streams: [] });
+  }
+
+  try {
+    const { id } = req.params;
+    const metadataId = parseMetadataSceneId(id);
+    if (!metadataId) return res.json({ streams: [] });
+    const records = await getMetadataSceneRecords(metadataId, config);
+    const scene = records.find(record => record.provider === metadataId.source) || records[0];
+    if (!scene) return res.json({ streams: [] });
+    return res.json({ streams: await tubehub.searchForScene(scene, [siteId]) });
+  } catch (error) {
+    console.warn(`[TubeHub] ${siteId} stream lookup failed: ${error.message}`);
+    return res.json({ streams: [] });
+  }
+}
+
+app.get('/:config/tube/:site/stream/:type/:id.json', (req, res) =>
+  handleTubeSiteStreams(req, res, req.params.config, req.params.site));
+
 // 3. Catalog handler (searches across Movies, Series, and Other in Stremio/Nuvio)
 async function handleCatalog(req, res, configStr) {
   const { type, id, extra } = req.params;
   const config = decodeConfig(configStr);
   const parsedExtra = parseCatalogExtra(req, extra);
   const metadataSource = metadataSourceForCatalogId(id);
-  const tubeSiteMatch = String(id || '').match(/^torrentz_tube_(.+)$/);
-  const tubeSite = tubeSiteMatch && tubehub.TUBE_SITE_IDS.includes(tubeSiteMatch[1])
-    ? tubeSiteMatch[1]
-    : null;
-
   let searchQuery = req.query.search || parsedExtra.search || '';
   searchQuery = String(searchQuery || '').trim();
 
   if (!searchQuery) {
-    if (metadataSource || tubeSite) {
+    if (metadataSource) {
       searchQuery = '';
     } else if (id === 'torrentz_xxx') {
       searchQuery = '1080p';
@@ -591,9 +615,7 @@ async function handleCatalog(req, res, configStr) {
     }
   }
 
-  console.log(`[Catalog Search] Querying ${metadataSource || tubeSite || 'torrent'} catalog for: "${searchQuery}" (${type})`);
-
-  if (tubeSite && !(config.tubeSites || []).includes(tubeSite)) return res.json({ metas: [] });
+  console.log(`[Catalog Search] Querying ${metadataSource || 'torrent'} catalog for: "${searchQuery}" (${type})`);
 
   const isAdult = type === 'other' || /xxx/i.test(id);
   const activeMetadataSources = metadataSource &&
@@ -607,35 +629,11 @@ async function handleCatalog(req, res, configStr) {
     searchQuery,
     config.providers,
     activeMetadataSources,
-    config.metadataApiKeys,
-    config.tubeSites || []
+    config.metadataApiKeys
   );
   const cachedMetas = cache.get(responseKey);
   if (cachedMetas) {
     return res.json({ metas: cachedMetas });
-  }
-
-  if (tubeSite) {
-    try {
-      const skip = Math.max(0, parseInt(parsedExtra.skip || req.query.skip, 10) || 0);
-      const items = await tubehub.searchSite(tubeSite, searchQuery, skip);
-      const metas = items.map(item => {
-        cache.set(`tubehub-item-meta:${item.id}`, item, CATALOG_TORRENT_TTL);
-        return {
-          id: item.id,
-          type: type || 'movie',
-          name: item.name,
-          poster: item.poster || undefined,
-          posterShape: 'landscape',
-          description: `TubeHub: ${tubehub.TUBE_SITES[tubeSite]}`
-        };
-      }).slice(0, 50);
-      cache.set(responseKey, metas, metas.length ? CATALOG_TTL : EMPTY_CATALOG_TTL);
-      return res.json({ metas });
-    } catch (err) {
-      console.error(`[TubeHub Catalog Error] ${tubeSite}: ${err.message}`);
-      return res.json({ metas: [] });
-    }
   }
 
   if (metadataSource && activeMetadataSources.length === 0) {
@@ -679,21 +677,6 @@ app.get('/:config/catalog/:type/:id/:extra.json', (req, res) => handleCatalog(re
 // 4. Meta handler (for items clicked from the search results)
 async function handleMeta(req, res, configStr) {
   const { type, id } = req.params;
-  if (id.startsWith('tube:')) {
-    const tubeItem = cache.get(`tubehub-item-meta:${id}`) || await tubehub.getCatalogItemMeta(id);
-    if (!tubeItem) return res.json({ meta: null });
-    return res.json({
-      meta: {
-        id,
-        type: type || 'movie',
-        name: tubeItem.name || 'Direct video',
-        poster: tubeItem.poster || placeholderPosterUrl(req, tubeItem.name || 'Direct video'),
-        posterShape: 'landscape',
-        description: `TubeHub: ${tubehub.TUBE_SITES[tubehub.parseTubeItemId(id)?.siteId] || 'direct video site'}`
-      }
-    });
-  }
-
   const metadataId = parseMetadataSceneId(id);
 
   if (metadataId) {
@@ -770,20 +753,9 @@ async function handleStreams(req, res, configStr) {
   const config = decodeConfig(configStr);
 
   try {
-    if (id.startsWith('tube:')) {
-      const parsedTubeId = tubehub.parseTubeItemId(id);
-      if (!parsedTubeId || !(config.tubeSites || []).includes(parsedTubeId.siteId)) {
-        return res.json({ streams: [] });
-      }
-      const item = cache.get(`tubehub-item-meta:${id}`) || await tubehub.getCatalogItemMeta(id);
-      const streams = await tubehub.resolveCatalogItem(id, item?.name || 'Direct video');
-      return res.json({ streams });
-    }
-
     let torrents = [];
     let metadataScene = null;
     let metadataMatchKind = 'title';
-    let tubeStreams = [];
 
     // Case A: Stream requested from a Stash-Box catalog scene.
     const metadataId = parseMetadataSceneId(id);
@@ -791,11 +763,6 @@ async function handleStreams(req, res, configStr) {
       const records = await getMetadataSceneRecords(metadataId, config);
       metadataScene = records.find(record => record.provider === metadataId.source) || records[0] || null;
       if (!metadataScene) return res.json({ streams: [] });
-
-      const tubeStreamsPromise = tubehub.searchForScene(metadataScene, config.tubeSites).catch(error => {
-        console.warn(`[TubeHub] metadata stream lookup failed: ${error.message}`);
-        return [];
-      });
 
       const candidates = metadataTorrentQueries(metadataScene);
       console.log(`[Stream] Searching torrent providers for metadata scene "${metadataScene.title}"`);
@@ -817,7 +784,6 @@ async function handleStreams(req, res, configStr) {
           break;
         }
       }
-      tubeStreams = await tubeStreamsPromise;
     }
     // Case B: Stream requested from a grouped torrent catalog item.
     else if (id.startsWith('torrentz-group:')) {
@@ -856,7 +822,7 @@ async function handleStreams(req, res, configStr) {
       }
     }
 
-    if ((!torrents || torrents.length === 0) && tubeStreams.length === 0) {
+    if (!torrents || torrents.length === 0) {
       return res.json({ streams: [] });
     }
 
@@ -940,7 +906,7 @@ async function handleStreams(req, res, configStr) {
       finalStreams.push(toStremioStream(stream));
     }
 
-    res.json({ streams: [...finalStreams, ...tubeStreams].slice(0, 150) });
+    res.json({ streams: finalStreams });
   } catch (err) {
     console.error(`[Stream Error]`, err);
     res.json({ streams: [] });

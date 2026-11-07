@@ -1,6 +1,6 @@
 {
   "name": "torrentz",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Stremio/Nuvio torrent addon with direct indexer scrapers and Debrid cache resolution",
   "main": "src/index.js",
   "scripts": {
