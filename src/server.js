@@ -191,6 +191,8 @@ async function getMetadataSceneRecords(parsedId, config) {
   return [scene];
 }
 
+const TORRENT_TITLE_STOP_WORDS = new Set(['a', 'an', 'and', 'by', 'for', 'from', 'her', 'his', 'in', 'of', 'the', 'to', 'with']);
+
 function metadataTorrentQueries(scene) {
   const code = String(scene.code || '').trim();
   // Prefer DVD-style release codes (e.g. SSIS-001). Many web-scene databases
@@ -206,6 +208,12 @@ function metadataTorrentQueries(scene) {
     return normalizedPerformer && normalizedTitle.includes(normalizedPerformer);
   }) || scene.performers?.[0];
 
+  if (title && performer && !normalizedTitle.includes(normalizeTitle(performer))) {
+    queries.push({ query: `${title} ${performer}`.slice(0, 160), matchKind: 'title' });
+  }
+  if (title && scene.studio && !normalizedTitle.includes(normalizeTitle(scene.studio))) {
+    queries.push({ query: `${title} ${scene.studio}`.slice(0, 160), matchKind: 'title' });
+  }
   if (title) queries.push({ query: title.slice(0, 160), matchKind: 'title' });
   if (performer) queries.push({ query: String(performer).slice(0, 120), matchKind: 'performer' });
   else {
@@ -218,6 +226,36 @@ function metadataTorrentQueries(scene) {
     }
   }
   return [...new Map(queries.map(item => [item.query.toLowerCase(), item])).values()];
+}
+
+function isMetadataTorrentRelevant(scene, torrent) {
+  const release = normalizeTitle(torrent.rawTitle);
+  if (!release) return false;
+
+  const code = String(scene.code || '').trim();
+  if (/^[A-Z0-9]{2,12}-\d{2,6}$/i.test(code) && release.includes(normalizeTitle(code))) return true;
+
+  const titleWords = normalizeTitle(scene.title)
+    .split(' ')
+    .filter(word => word.length > 1 && !TORRENT_TITLE_STOP_WORDS.has(word));
+  if (titleWords.length === 0) return false;
+
+  const releaseWords = new Set(release.split(' '));
+  const matchingTitleWords = titleWords.filter(word => releaseWords.has(word)).length;
+  const titleOverlap = matchingTitleWords / titleWords.length;
+  const castMatch = (scene.performers || []).some(name => {
+    const performer = normalizeTitle(name);
+    return performer.length > 2 && release.includes(performer);
+  });
+  const studio = normalizeTitle(scene.studio);
+  const studioMatch = studio.length > 2 && release.includes(studio);
+
+  // Short/generic names (e.g. "The Set Up") must also agree on cast or studio;
+  // otherwise unrelated films with the same title leak into this scene.
+  if (titleWords.length <= 2) return titleOverlap === 1 && (castMatch || studioMatch);
+  if (titleOverlap >= 0.8) return true;
+  if (titleOverlap >= 0.4 && (castMatch || studioMatch)) return true;
+  return castMatch && studioMatch && titleOverlap >= 0.25;
 }
 
 function addTorrentSourceBadge(stream, matchKind = 'title') {
@@ -714,12 +752,7 @@ async function handleStreams(req, res, configStr) {
         const candidateTorrents = cached || await scrapers.searchAll(candidate.query, config.providers, { timeoutMs: 5000 });
         if (!cached) cache.set(cacheKey, candidateTorrents, STREAM_TTL);
 
-        if (candidate.matchKind === 'performer' || candidate.matchKind === 'title-keyword') {
-          const performer = normalizeTitle(candidate.query);
-          torrents = candidateTorrents.filter(torrent => normalizeTitle(torrent.rawTitle).includes(performer));
-        } else {
-          torrents = candidateTorrents;
-        }
+        torrents = candidateTorrents.filter(torrent => isMetadataTorrentRelevant(metadataScene, torrent));
 
         if (torrents.length > 0) {
           metadataMatchKind = candidate.matchKind;
