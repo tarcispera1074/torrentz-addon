@@ -400,6 +400,45 @@
       </div>
     </div>
 
+    <!-- Direct video sources from the separate TubeHub/onlyporn-addon service -->
+    <div class="section" id="tubeSitesSection">
+      <div class="section-title">Direct Video Sites (TubeHub)</div>
+      <div class="helper-text" style="margin-bottom: 0.8rem;">
+        These add direct video-stream options alongside torrents. Each selected site is searched for the exact metadata title first, then metadata keywords. Keyword matches are labeled. These are not TorBox downloads.
+      </div>
+      <div class="provider-actions" aria-label="Direct video site selection actions">
+        <button type="button" class="provider-action" onclick="setAllTubeSites(true)">Select all</button>
+        <button type="button" class="provider-action" onclick="setAllTubeSites(false)">Deselect all</button>
+      </div>
+      <div class="grid-options">
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-pornhub" value="pornhub"><span>Pornhub (HD)</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-pornhub_4k" value="pornhub_4k"><span>Pornhub (4K)</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-xhamster" value="xhamster" checked><span>xHamster (HD)</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-xhamster_4k" value="xhamster_4k"><span>xHamster (4K)</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-xvideos" value="xvideos" checked><span>xVideos (HD)</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-tnaflix" value="tnaflix"><span>TnaFlix</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-justporn" value="justporn"><span>JustPorn</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-handjobhub" value="handjobhub"><span>HandjobHub</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-okxxx" value="okxxx"><span>OK.xxx</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-xgroovy" value="xgroovy"><span>XGroovy</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-theyarehuge" value="theyarehuge"><span>TheyAreHuge</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-pornid" value="pornid"><span>PornID</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-zbporn" value="zbporn"><span>ZbPorn</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-megatube" value="megatube"><span>MegaTube</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-shameless" value="shameless"><span>Shameless</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-superporn" value="superporn"><span>SuperPorn</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-pornone" value="pornone"><span>PornOne</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-redtube" value="redtube" checked><span>RedTube (HD)</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-redtube_4k" value="redtube_4k"><span>RedTube (4K)</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-youporn" value="youporn" checked><span>YouPorn (HD)</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-youporn_4k" value="youporn_4k"><span>YouPorn (4K)</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-tube8" value="tube8" checked><span>Tube8 (HD)</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-tube8_4k" value="tube8_4k"><span>Tube8 (4K)</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-letsporn" value="letsporn"><span>LetsPorn</span></label>
+        <label class="checkbox-label"><input type="checkbox" id="tubesite-porn300" value="porn300"><span>Porn300</span></label>
+      </div>
+    </div>
+
     <!-- Torrent Providers -->
     <div class="section">
       <div class="section-title">Torrent Providers</div>
@@ -592,6 +631,13 @@
       updateInstallLink();
     }
 
+    function setAllTubeSites(selected) {
+      document.querySelectorAll('input[id^="tubesite-"]').forEach(input => {
+        input.checked = selected;
+      });
+      updateInstallLink();
+    }
+
     function buildConfigObject() {
       const providers = [];
       ['tpb', '1337x', 'limetorrents', 'rargb', 'torlock', 'pussytorrents', 'yourbittorrent2', 'bootytape', 'mypornclub', 'lovetorrent', 'xxxclub', 'pornrips', 'sukebei', 'tokyotosho', 'ffjav'].forEach(p => {
@@ -617,6 +663,11 @@
         }
       });
 
+      const tubeSites = [];
+      document.querySelectorAll('input[id^="tubesite-"]:checked').forEach(input => {
+        tubeSites.push(input.value);
+      });
+
       const resolutions = [];
       ['2160p', '1080p', '720p', '480p'].forEach(r => {
         if (document.getElementById(`res-${r}`).checked) {
@@ -628,6 +679,7 @@
         providers,
         metadataSources,
         metadataApiKeys,
+        tubeSites,
         debridProvider: debridProvider === 'none' ? null : debridProvider,
         debridApiKey: debridProvider === 'none' ? '' : debridApiKey,
         showP2PFallback,

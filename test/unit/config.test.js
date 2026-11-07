@@ -15,6 +15,7 @@ test('URL-safe base64 round-trips every config field', () => {
     debridApiKey: 'secret-token',
     metadataSources: ['tpdb', 'javstash'],
     metadataApiKeys: { tpdb: 'tpdb-secret', javstash: 'javstash-secret', invalid: 'ignored' },
+    tubeSites: ['xhamster', 'xvideos', 'unknown'],
     showP2PFallback: false,
     maxStreamsPerResolution: 8,
     resolutions: ['1080p', '720p'],
@@ -29,6 +30,7 @@ test('URL-safe base64 round-trips every config field', () => {
   assert.equal(decoded.debridApiKey, 'secret-token');
   assert.deepEqual(decoded.metadataSources, ['tpdb', 'javstash']);
   assert.deepEqual(decoded.metadataApiKeys, { tpdb: 'tpdb-secret', javstash: 'javstash-secret' });
+  assert.deepEqual(decoded.tubeSites, ['xhamster', 'xvideos']);
   assert.equal(decoded.showP2PFallback, false);
   assert.equal(decoded.maxStreamsPerResolution, 8);
   assert.deepEqual(decoded.resolutions, ['1080p', '720p']);

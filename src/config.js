@@ -1,4 +1,5 @@
 const { normalizeResolution, SUPPORTED_RESOLUTIONS } = require('./utils/parser');
+const { TUBE_SITE_IDS, DEFAULT_TUBE_SITES } = require('./streaming/tube-sites');
 
 /**
  * Default Addon Configuration
@@ -8,6 +9,7 @@ const DEFAULT_CONFIG = {
   providers: ['tpb', '1337x', 'limetorrents', 'rargb'],
   metadataSources: [],
   metadataApiKeys: {},
+  tubeSites: [...DEFAULT_TUBE_SITES],
   debridProvider: null, // 'realdebrid', 'alldebrid', 'premiumize', 'torbox', 'debridlink' or null
   debridApiKey: '',
   showP2PFallback: true,
@@ -58,7 +60,8 @@ const ALLOWED_KEYS = new Set([
   'resolutions',
   'groupByTitle',
   'metadataSources',
-  'metadataApiKeys'
+  'metadataApiKeys',
+  'tubeSites'
 ]);
 
 function safeDecode(value) {
@@ -137,6 +140,16 @@ function sanitizeMetadataApiKeys(value) {
   return keys;
 }
 
+function sanitizeTubeSites(value) {
+  const list = Array.isArray(value)
+    ? value
+    : (typeof value === 'string' ? value.split(',') : []);
+  return [...new Set(list
+    .filter(item => typeof item === 'string')
+    .map(item => item.trim().toLowerCase())
+    .filter(item => TUBE_SITE_IDS.includes(item)))];
+}
+
 /**
  * Keep only known keys and coerce every value to the expected type.
  * This also blocks prototype-pollution style keys from user supplied config.
@@ -166,6 +179,10 @@ function sanitizeConfig(input = {}) {
 
   if (out.metadataApiKeys !== undefined) {
     out.metadataApiKeys = sanitizeMetadataApiKeys(out.metadataApiKeys);
+  }
+
+  if (out.tubeSites !== undefined) {
+    out.tubeSites = sanitizeTubeSites(out.tubeSites);
   }
 
   if (out.debridProvider !== undefined) {
@@ -268,6 +285,8 @@ function decodeConfig(configStr) {
         } catch (err) {
           overrides.metadataApiKeys = {};
         }
+      } else if (key === 'tubesites') {
+        overrides.tubeSites = v.split(',').map(s => s.trim()).filter(Boolean);
       }
     }
   } catch (err) {

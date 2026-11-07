@@ -8,6 +8,7 @@ const { streamsCacheKey } = require('../../src/utils/cacheKeys');
 const scrapers = require('../../src/scrapers');
 const debrid = require('../../src/debrid');
 const stashbox = require('../../src/metadata/stashbox');
+const tubehub = require('../../src/streaming/tubehub');
 
 const HASH_1080 = 'a'.repeat(40);
 const HASH_720 = 'b'.repeat(40);
@@ -75,7 +76,7 @@ test('serves the dynamic manifest with the shared version', async () => {
   const { status, body } = await getJson('/manifest.json');
 
   assert.equal(status, 200);
-  assert.equal(body.version, '1.3.6');
+  assert.equal(body.version, '1.4.0');
   assert.equal(body.id, 'community.torrentz.addon');
   assert.deepEqual(body.resources, ['catalog', 'meta', 'stream']);
   assert.deepEqual(body.types, ['movie']);
@@ -347,7 +348,8 @@ test('grouped IDs still resolve after an in-memory cache reset', async () => {
 test('metadata catalogs search independently and route matching torrents with source labels', async () => {
   const originalSearch = stashbox.search;
   const originalScrape = scrapers.searchAll;
-  const query = 'Blair Williams';
+  const originalTubeSearch = tubehub.searchForScene;
+  const query = 'Sheila Ortega';
   const searchedSources = [];
   const torrentQueries = [];
   const config = encodeConfig({
@@ -362,29 +364,38 @@ test('metadata catalogs search independently and route matching torrents with so
       id: `${source}-scene-42`,
       provider: source,
       providerName: source === 'tpdb' ? 'ThePornDB' : 'StashDB',
-      title: 'Blair Williams Gets Banged By Her Stepfather',
-      date: '2025-02-03',
-      code: 'blair-williams-gets-banged-by-her-stepfather',
-      studio: 'Example Studio',
-      performers: [],
+      title: 'The Set Up',
+      date: '2021-04-29',
+      code: '',
+      studio: 'XConfessions',
+      performers: ['Sheila Ortega', 'Tommy Cabrio'],
       poster: source === 'tpdb' ? 'https://images.example/scene.jpg' : 'https://images.example/duplicate.jpg',
       urls: []
     }];
   };
   scrapers.searchAll = async searchQuery => {
     torrentQueries.push(searchQuery);
-    if (searchQuery === 'Blair Williams Gets Banged By Her Stepfather') return [];
-    assert.equal(searchQuery, 'Blair Williams');
+    if (searchQuery === 'The Set Up') {
+      return [{
+        rawTitle: 'BrazzersExxtra - Rachel Starr, Azul Hermosa - The Set Up 1080p',
+        infoHash: 'm'.repeat(40),
+        sizeBytes: 900 * 1024 * 1024,
+        seeders: 25,
+        source: 'LimeTorrents'
+      }];
+    }
+    if (searchQuery === 'The Set Up XConfessions') return [];
+    assert.equal(searchQuery, 'Sheila Ortega');
     return [
       {
-        rawTitle: 'Blair.Williams.1080p.WEB-DL',
+        rawTitle: 'XConfessions.Sheila.Ortega.The.Set.Up.1080p.WEB-DL',
         infoHash: 'k'.repeat(40),
         sizeBytes: 2 * 1024 * 1024 * 1024,
         seeders: 30,
         source: 'ThePirateBay'
       },
       {
-        rawTitle: 'Blair.Williams.720p.WEB-DL',
+        rawTitle: 'XConfessions.Sheila.Ortega.The.Set.Up.720p.WEB-DL',
         infoHash: 'l'.repeat(40),
         sizeBytes: 800 * 1024 * 1024,
         seeders: 20,
@@ -392,6 +403,7 @@ test('metadata catalogs search independently and route matching torrents with so
       }
     ];
   };
+  tubehub.searchForScene = async () => [];
 
   try {
     const catalog = await getJson(`/${config}/catalog/movie/torrentz_tpdb/search=${encodeURIComponent(query)}.json`);
@@ -410,18 +422,115 @@ test('metadata catalogs search independently and route matching torrents with so
     assert.deepEqual(searchedSources, ['tpdb', 'stashdb']);
 
     const detail = await getJson(`/${config}/meta/movie/${encodeURIComponent(meta.id)}.json`);
-    assert.equal(detail.body.meta.name, 'Blair Williams Gets Banged By Her Stepfather');
+    assert.equal(detail.body.meta.name, 'The Set Up');
 
     const streams = await getJson(`/${config}/stream/movie/${encodeURIComponent(meta.id)}.json`);
     assert.equal(streams.body.streams.length, 2);
     assert.match(streams.body.streams[0].name, /\[ThePirateBay\]/);
     assert.match(streams.body.streams[1].name, /\[1337x\]/);
-    assert.ok(streams.body.streams.every(stream => stream.name.includes('[Title keyword match]')));
-    assert.ok(streams.body.streams.every(stream => stream.title.includes('Title keyword match only')));
-    assert.deepEqual(torrentQueries, ['Blair Williams Gets Banged By Her Stepfather', 'Blair Williams']);
-    assert.ok(streams.body.streams.every(stream => stream.title.startsWith('Blair Williams Gets Banged By Her Stepfather')));
+    assert.deepEqual(torrentQueries, ['The Set Up', 'The Set Up XConfessions', 'Sheila Ortega']);
+    assert.ok(streams.body.streams.every(stream => stream.title.startsWith('The Set Up')));
   } finally {
     stashbox.search = originalSearch;
     scrapers.searchAll = originalScrape;
+    tubehub.searchForScene = originalTubeSearch;
+  }
+});
+
+test('TubeHub video options are returned even when torrent providers have no match', async () => {
+  const originalSearch = stashbox.search;
+  const originalScrape = scrapers.searchAll;
+  const originalTubeSearch = tubehub.searchForScene;
+  const config = encodeConfig({
+    providers: ['tpb'],
+    metadataSources: ['stashdb'],
+    metadataApiKeys: { stashdb: 'stashdb-test-key' },
+    tubeSites: ['xhamster', 'xvideos']
+  });
+
+  stashbox.search = async () => ([{
+    id: 'direct-video-scene',
+    provider: 'stashdb',
+    providerName: 'StashDB',
+    title: 'The Set Up',
+    date: '2021-04-29',
+    studio: 'XConfessions',
+    performers: ['Sheila Ortega', 'Tommy Cabrio'],
+    poster: 'https://images.example/setup.jpg',
+    urls: []
+  }]);
+  scrapers.searchAll = async () => [];
+  tubehub.searchForScene = async (scene, sites) => {
+    assert.equal(scene.title, 'The Set Up');
+    assert.deepEqual(sites, ['xhamster', 'xvideos']);
+    return [{
+      name: 'TubeHub: xHamster (HD)',
+      title: '🛡️ auto (HLS)',
+      url: 'https://tubehub-addon.onrender.com/proxy/hls.m3u8?url=master',
+      behaviorHints: { notWebReady: false }
+    }];
+  };
+
+  try {
+    const catalog = await getJson(`/${config}/catalog/movie/torrentz_stashdb/search=The%20Set%20Up.json`);
+    const sceneId = catalog.body.metas[0].id;
+    const result = await getJson(`/${config}/stream/movie/${encodeURIComponent(sceneId)}.json`);
+
+    assert.equal(result.body.streams.length, 1);
+    assert.equal(result.body.streams[0].name, 'TubeHub: xHamster (HD)');
+    assert.match(result.body.streams[0].url, /tubehub-addon\.onrender\.com\/proxy/);
+  } finally {
+    stashbox.search = originalSearch;
+    scrapers.searchAll = originalScrape;
+    tubehub.searchForScene = originalTubeSearch;
+  }
+});
+
+test('TubeHub site streams are included alongside torrent streams for metadata scenes', async () => {
+  const originalSearch = stashbox.search;
+  const originalScrape = scrapers.searchAll;
+  const originalTubeSearch = tubehub.searchForScene;
+  const config = encodeConfig({
+    providers: ['tpb'],
+    metadataSources: ['tpdb'],
+    metadataApiKeys: { tpdb: 'tpdb-test-key' },
+    tubeSites: ['xhamster']
+  });
+
+  stashbox.search = async () => ([{
+    id: 'tubehub-integration-scene',
+    provider: 'tpdb',
+    providerName: 'ThePornDB',
+    title: 'Direct Site Match Example',
+    date: '2025-01-01',
+    code: '',
+    studio: 'Example Studio',
+    performers: ['Example Performer'],
+    poster: 'https://images.example/direct.jpg',
+    urls: []
+  }]);
+  scrapers.searchAll = async () => [];
+  tubehub.searchForScene = async (scene, sites) => {
+    assert.equal(scene.title, 'Direct Site Match Example');
+    assert.deepEqual(sites, ['xhamster']);
+    return [{
+      name: 'TubeHub: xHamster (HD)',
+      title: 'Exact title match • 1080p HLS',
+      url: 'https://tubehub-addon.onrender.com/proxy?url=https%3A%2F%2Fvideo.example%2Fmaster.m3u8',
+      behaviorHints: { notWebReady: false }
+    }];
+  };
+
+  try {
+    const catalog = await getJson(`/${config}/catalog/movie/torrentz_tpdb/search=Direct%20Site%20Match%20Example.json`);
+    const sceneId = catalog.body.metas[0].id;
+    const response = await getJson(`/${config}/stream/movie/${encodeURIComponent(sceneId)}.json`);
+    assert.equal(response.body.streams.length, 1);
+    assert.equal(response.body.streams[0].name, 'TubeHub: xHamster (HD)');
+    assert.match(response.body.streams[0].url, /tubehub-addon\.onrender\.com\/proxy/);
+  } finally {
+    stashbox.search = originalSearch;
+    scrapers.searchAll = originalScrape;
+    tubehub.searchForScene = originalTubeSearch;
   }
 });
