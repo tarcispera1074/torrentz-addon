@@ -103,6 +103,8 @@ test('configuration page exposes both provider actions and the manifest URL', as
   assert.match(html, /Base64 is not encryption/);
   assert.match(html, /Direct Video Sites \(TubeHub\)/);
   assert.match(html, /tubeInstallLinks/);
+  assert.match(html, /tube-install-url/);
+  assert.match(html, /Copy URL/);
   for (const site of ['xhamster', 'xhamster_4k', 'xvideos', 'redtube', 'tube8']) {
     assert.match(html, new RegExp(`tubesite-${site}`));
   }

@@ -219,6 +219,14 @@
       margin-top: 0.65rem;
     }
 
+    .tube-install-item {
+      min-width: 0;
+      padding: 0.55rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
     .tube-install-link {
       display: block;
       overflow: hidden;
@@ -236,6 +244,35 @@
     .tube-install-link:hover {
       border-color: var(--accent);
       background: rgba(108, 92, 231, 0.12);
+    }
+
+    .tube-install-url-row {
+      display: flex;
+      gap: 0.4rem;
+      margin-top: 0.4rem;
+    }
+
+    .tube-install-url {
+      min-width: 0;
+      flex: 1;
+      padding: 0.45rem 0.55rem !important;
+      font-size: 0.72rem !important;
+      text-overflow: ellipsis;
+    }
+
+    .tube-copy-url {
+      flex: 0 0 auto;
+      padding: 0.4rem 0.55rem;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+      cursor: pointer;
+      font-size: 0.72rem;
+    }
+
+    .tube-copy-url:hover {
+      border-color: var(--accent);
     }
 
     .input-group {
@@ -773,12 +810,42 @@
       const origin = window.location.origin;
       selected.forEach(site => {
         const url = `${origin}/${token}/tube/${site}/manifest.json`;
+        const item = document.createElement('div');
+        item.className = 'tube-install-item';
         const link = document.createElement('a');
         link.className = 'tube-install-link';
         link.href = url.replace(/^https?:\/\//i, 'stremio://');
-        link.textContent = `Install ${tubeSiteLabels[site] || site} tab`;
+        link.textContent = `Install ${tubeSiteLabels[site] || site} tab in Nuvio`;
         link.title = url;
-        container.appendChild(link);
+        const urlRow = document.createElement('div');
+        urlRow.className = 'tube-install-url-row';
+        const urlInput = document.createElement('input');
+        urlInput.className = 'tube-install-url';
+        urlInput.type = 'text';
+        urlInput.readOnly = true;
+        urlInput.value = url;
+        urlInput.setAttribute('aria-label', `${tubeSiteLabels[site] || site} manifest URL`);
+        urlInput.title = 'Click to select the full HTTPS manifest URL';
+        urlInput.addEventListener('focus', () => urlInput.select());
+        urlInput.addEventListener('click', () => urlInput.select());
+        const copyButton = document.createElement('button');
+        copyButton.type = 'button';
+        copyButton.className = 'tube-copy-url';
+        copyButton.textContent = 'Copy URL';
+        copyButton.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(url);
+            copyButton.textContent = 'Copied';
+          } catch {
+            urlInput.focus();
+            urlInput.select();
+            copyButton.textContent = 'Selected';
+          }
+          window.setTimeout(() => { copyButton.textContent = 'Copy URL'; }, 1800);
+        });
+        urlRow.append(urlInput, copyButton);
+        item.append(link, urlRow);
+        container.appendChild(item);
       });
     }
 
