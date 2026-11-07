@@ -192,9 +192,16 @@ async function getMetadataSceneRecords(parsedId, config) {
 }
 
 function metadataTorrentQuery(scene) {
-  if (scene.code) return scene.code.slice(0, 120);
+  const code = String(scene.code || '').trim();
+  // Prefer DVD-style release codes (e.g. SSIS-001). Many web-scene databases
+  // populate `code` with an internal numeric ID that torrent titles won't use.
+  if (/^[A-Z0-9]{2,12}-\d{2,6}$/i.test(code)) return code.slice(0, 120);
   const title = String(scene.title || '').trim();
-  const performer = scene.performers?.[0];
+  const normalizedTitle = normalizeTitle(title);
+  const performer = (scene.performers || []).find(name => {
+    const normalizedPerformer = normalizeTitle(name);
+    return normalizedPerformer && normalizedTitle.includes(normalizedPerformer);
+  }) ? '' : scene.performers?.[0];
   return [title, performer].filter(Boolean).join(' ').slice(0, 160);
 }
 

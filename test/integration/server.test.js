@@ -75,7 +75,7 @@ test('serves the dynamic manifest with the shared version', async () => {
   const { status, body } = await getJson('/manifest.json');
 
   assert.equal(status, 200);
-  assert.equal(body.version, '1.3.0');
+  assert.equal(body.version, '1.3.1');
   assert.equal(body.id, 'community.torrentz.addon');
   assert.deepEqual(body.resources, ['catalog', 'meta', 'stream']);
   assert.deepEqual(body.types, ['movie']);
@@ -363,7 +363,7 @@ test('metadata catalogs search independently and route matching torrents with so
       providerName: source === 'tpdb' ? 'ThePornDB' : 'StashDB',
       title: 'Scene Integration Test',
       date: '2025-02-03',
-      code: 'SIT-042',
+      code: '428531',
       studio: 'Example Studio',
       performers: ['Example Performer'],
       poster: source === 'tpdb' ? 'https://images.example/scene.jpg' : 'https://images.example/duplicate.jpg',
@@ -371,17 +371,17 @@ test('metadata catalogs search independently and route matching torrents with so
     }];
   };
   scrapers.searchAll = async searchQuery => {
-    assert.equal(searchQuery, 'SIT-042');
+    assert.equal(searchQuery, 'Scene Integration Test Example Performer');
     return [
       {
-        rawTitle: 'SIT-042.1080p.WEB-DL',
+        rawTitle: 'Scene.Integration.Test.Example.Performer.1080p.WEB-DL',
         infoHash: 'k'.repeat(40),
         sizeBytes: 2 * 1024 * 1024 * 1024,
         seeders: 30,
         source: 'ThePirateBay'
       },
       {
-        rawTitle: 'SIT-042.720p.WEB-DL',
+        rawTitle: 'Scene.Integration.Test.Example.Performer.720p.WEB-DL',
         infoHash: 'l'.repeat(40),
         sizeBytes: 800 * 1024 * 1024,
         seeders: 20,
