@@ -467,7 +467,7 @@
     <div class="section" id="tubeSitesSection">
       <div class="section-title">Direct Video Sites (TubeHub)</div>
       <div class="helper-text" style="margin-bottom: 0.8rem;">
-        Select sites to create separate Nuvio addons/source tabs. They search the exact metadata title first, then try metadata keywords. Keyword matches are labeled; direct streams are proxied and are not TorBox downloads.
+        Choose which websites the single TubeHub addon should search. Exact metadata titles are tried first, then keywords. Every direct stream is labeled with its originating website; streams are proxied and are not TorBox downloads.
       </div>
       <div class="provider-actions" aria-label="Direct video site selection actions">
         <button type="button" class="provider-action" onclick="setAllTubeSites(true)">Select all</button>
@@ -501,7 +501,7 @@
         <label class="checkbox-label"><input type="checkbox" id="tubesite-porn300" value="porn300"><span>Porn300</span></label>
       </div>
       <div class="helper-text" style="margin-top: 0.75rem;">
-        Install each selected site below. Each installs as a separate addon and gets its own source tab in Nuvio’s stream screen.
+        Install two addons: Torrentz for torrent results and TubeHub for direct video results. The TubeHub tab searches all selected websites; each stream shows the website it came from.
       </div>
       <div id="tubeInstallLinks" class="tube-install-links" aria-live="polite"></div>
     </div>
@@ -612,7 +612,7 @@
 
     <!-- Action Buttons -->
     <div class="actions">
-      <a href="#" id="installBtn" class="btn btn-primary">Install to Nuvio / Stremio</a>
+      <a href="#" id="installBtn" class="btn btn-primary">Install Torrentz (Torrents) to Nuvio / Stremio</a>
       <button type="button" id="copyBtn" class="btn btn-secondary" onclick="copyManifestUrl()">Copy Manifest URL</button>
       <div id="installSuccessNotice">Copied to clipboard! Paste it into Nuvio's Addon URL bar.</div>
     </div>
@@ -808,45 +808,43 @@
 
       const token = encodedConfig || getEncodedConfig();
       const origin = window.location.origin;
-      selected.forEach(site => {
-        const url = `${origin}/${token}/tube/${site}/manifest.json`;
-        const item = document.createElement('div');
-        item.className = 'tube-install-item';
-        const link = document.createElement('a');
-        link.className = 'tube-install-link';
-        link.href = url.replace(/^https?:\/\//i, 'stremio://');
-        link.textContent = `Install ${tubeSiteLabels[site] || site} tab in Nuvio`;
-        link.title = url;
-        const urlRow = document.createElement('div');
-        urlRow.className = 'tube-install-url-row';
-        const urlInput = document.createElement('input');
-        urlInput.className = 'tube-install-url';
-        urlInput.type = 'text';
-        urlInput.readOnly = true;
-        urlInput.value = url;
-        urlInput.setAttribute('aria-label', `${tubeSiteLabels[site] || site} manifest URL`);
-        urlInput.title = 'Click to select the full HTTPS manifest URL';
-        urlInput.addEventListener('focus', () => urlInput.select());
-        urlInput.addEventListener('click', () => urlInput.select());
-        const copyButton = document.createElement('button');
-        copyButton.type = 'button';
-        copyButton.className = 'tube-copy-url';
-        copyButton.textContent = 'Copy URL';
-        copyButton.addEventListener('click', async () => {
-          try {
-            await navigator.clipboard.writeText(url);
-            copyButton.textContent = 'Copied';
-          } catch {
-            urlInput.focus();
-            urlInput.select();
-            copyButton.textContent = 'Selected';
-          }
-          window.setTimeout(() => { copyButton.textContent = 'Copy URL'; }, 1800);
-        });
-        urlRow.append(urlInput, copyButton);
-        item.append(link, urlRow);
-        container.appendChild(item);
+      const url = `${origin}/${token}/tube/manifest.json`;
+      const item = document.createElement('div');
+      item.className = 'tube-install-item';
+      const link = document.createElement('a');
+      link.className = 'tube-install-link';
+      link.href = url.replace(/^https?:\/\//i, 'stremio://');
+      link.textContent = 'Install TubeHub (Selected Websites) in Nuvio';
+      link.title = url;
+      const urlRow = document.createElement('div');
+      urlRow.className = 'tube-install-url-row';
+      const urlInput = document.createElement('input');
+      urlInput.className = 'tube-install-url';
+      urlInput.type = 'text';
+      urlInput.readOnly = true;
+      urlInput.value = url;
+      urlInput.setAttribute('aria-label', 'TubeHub manifest URL');
+      urlInput.title = 'Click to select the full HTTPS manifest URL';
+      urlInput.addEventListener('focus', () => urlInput.select());
+      urlInput.addEventListener('click', () => urlInput.select());
+      const copyButton = document.createElement('button');
+      copyButton.type = 'button';
+      copyButton.className = 'tube-copy-url';
+      copyButton.textContent = 'Copy URL';
+      copyButton.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(url);
+          copyButton.textContent = 'Copied';
+        } catch {
+          urlInput.focus();
+          urlInput.select();
+          copyButton.textContent = 'Selected';
+        }
+        window.setTimeout(() => { copyButton.textContent = 'Copy URL'; }, 1800);
       });
+      urlRow.append(urlInput, copyButton);
+      item.append(link, urlRow);
+      container.appendChild(item);
     }
 
     function updateInstallLink() {

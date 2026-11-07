@@ -2,7 +2,7 @@ const { DEFAULT_CONFIG } = require('./config');
 const debrid = require('./debrid');
 const { TUBE_SITES } = require('./streaming/tube-sites');
 
-const ADDON_VERSION = '1.4.2';
+const ADDON_VERSION = '1.4.3';
 
 const METADATA_CATALOGS = [
   { source: 'tpdb', label: 'PornDB' },
@@ -62,7 +62,29 @@ function createManifest(config = DEFAULT_CONFIG) {
   };
 }
 
-/** A stream addon per TubeHub site so Nuvio displays a separate source tab. */
+/** A single TubeHub stream addon aggregating the selected direct video sites. */
+function createTubeHubManifest(config = DEFAULT_CONFIG) {
+  if (!Array.isArray(config.tubeSites) || config.tubeSites.length === 0) return null;
+
+  return {
+    id: 'community.torrentz.tubehub',
+    version: ADDON_VERSION,
+    name: 'TubeHub',
+    description: 'Direct video streams from selected TubeHub websites',
+    resources: ['stream'],
+    types: ['movie'],
+    idPrefixes: [
+      'tpdb-scene:',
+      'stashdb-scene:',
+      'javstash-scene:',
+      'pmvstash-scene:',
+      'fansdb-scene:'
+    ],
+    behaviorHints: { configurable: true, configurationRequired: false }
+  };
+}
+
+/** Legacy per-site manifests remain available for existing installs. */
 function createTubeSiteManifest(config = DEFAULT_CONFIG, siteId) {
   const siteName = TUBE_SITES[siteId];
   if (!siteName || !(config.tubeSites || []).includes(siteId)) return null;
@@ -89,5 +111,6 @@ module.exports = {
   ADDON_VERSION,
   METADATA_CATALOGS,
   createManifest,
+  createTubeHubManifest,
   createTubeSiteManifest
 };

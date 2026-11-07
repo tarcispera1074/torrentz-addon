@@ -15,7 +15,7 @@ const {
   normalizeResolution
 } = require('./utils/parser');
 const { streamsCacheKey, debridFlagsCacheKey, normalizeProviders } = require('./utils/cacheKeys');
-const { createManifest, createTubeSiteManifest } = require('./manifest');
+const { createManifest, createTubeHubManifest, createTubeSiteManifest } = require('./manifest');
 const cache = require('./utils/cache');
 
 const app = express();
@@ -256,7 +256,9 @@ function isMetadataTorrentRelevant(scene, torrent) {
 }
 
 function addTorrentSourceBadge(stream, matchKind = 'title') {
-  const source = String(stream.source || '').replace(/[\[\]\r\n]/g, '').slice(0, 40);
+  const sourceId = String(stream.source || '').trim();
+  const scraper = scrapers.SCRAPERS?.[sourceId.toLowerCase()];
+  const source = String(scraper?.name || sourceId).replace(/[\[\]\r\n]/g, '').slice(0, 40);
   const matchBadge = matchKind === 'performer'
     ? 'Performer match'
     : (matchKind === 'title-keyword' ? 'Title keyword match' : null);
@@ -566,6 +568,13 @@ app.get('/:config/manifest.json', (req, res) => {
   res.json(createManifest(config));
 });
 
+app.get('/:config/tube/manifest.json', (req, res) => {
+  const config = decodeConfig(req.params.config);
+  const manifest = createTubeHubManifest(config);
+  if (!manifest) return res.status(404).json({ error: 'Select at least one TubeHub website.' });
+  res.json(manifest);
+});
+
 app.get('/:config/tube/:site/manifest.json', (req, res) => {
   const config = decodeConfig(req.params.config);
   const manifest = createTubeSiteManifest(config, req.params.site);
@@ -595,6 +604,27 @@ async function handleTubeSiteStreams(req, res, configStr, siteId) {
 
 app.get('/:config/tube/:site/stream/:type/:id.json', (req, res) =>
   handleTubeSiteStreams(req, res, req.params.config, req.params.site));
+
+async function handleTubeHubStreams(req, res, configStr) {
+  const config = decodeConfig(configStr);
+  const selectedSites = (config.tubeSites || []).filter(site => tubehub.TUBE_SITE_IDS.includes(site));
+  if (selectedSites.length === 0) return res.json({ streams: [] });
+
+  try {
+    const metadataId = parseMetadataSceneId(req.params.id);
+    if (!metadataId) return res.json({ streams: [] });
+    const records = await getMetadataSceneRecords(metadataId, config);
+    const scene = records.find(record => record.provider === metadataId.source) || records[0];
+    if (!scene) return res.json({ streams: [] });
+    return res.json({ streams: await tubehub.searchForScene(scene, selectedSites) });
+  } catch (error) {
+    console.warn(`[TubeHub] combined stream lookup failed: ${error.message}`);
+    return res.json({ streams: [] });
+  }
+}
+
+app.get('/:config/tube/stream/:type/:id.json', (req, res) =>
+  handleTubeHubStreams(req, res, req.params.config));
 
 // 3. Catalog handler (searches across Movies, Series, and Other in Stremio/Nuvio)
 async function handleCatalog(req, res, configStr) {
@@ -879,16 +909,16 @@ async function handleStreams(req, res, configStr) {
             debridProvider: config.debridProvider.toUpperCase()
           });
           formatted.url = `${protocol}://${host}/playback/${encodeURIComponent(configStr)}/${torrent.infoHash}`;
-          if (metadataScene) addTorrentSourceBadge(formatted, metadataMatchKind);
+          addTorrentSourceBadge(formatted, metadataScene ? metadataMatchKind : 'title');
           formattedStreams.push(formatted);
         } else if (config.showP2PFallback) {
           const formatted = formatStream(base);
-          if (metadataScene) addTorrentSourceBadge(formatted, metadataMatchKind);
+          addTorrentSourceBadge(formatted, metadataScene ? metadataMatchKind : 'title');
           formattedStreams.push(formatted);
         }
       } else {
         const formatted = formatStream(base);
-        if (metadataScene) addTorrentSourceBadge(formatted, metadataMatchKind);
+        addTorrentSourceBadge(formatted, metadataScene ? metadataMatchKind : 'title');
         formattedStreams.push(formatted);
       }
     }

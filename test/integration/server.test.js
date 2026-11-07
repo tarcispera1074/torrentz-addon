@@ -76,7 +76,7 @@ test('serves the dynamic manifest with the shared version', async () => {
   const { status, body } = await getJson('/manifest.json');
 
   assert.equal(status, 200);
-  assert.equal(body.version, '1.4.2');
+  assert.equal(body.version, '1.4.3');
   assert.equal(body.id, 'community.torrentz.addon');
   assert.deepEqual(body.resources, ['catalog', 'meta', 'stream']);
   assert.deepEqual(body.types, ['movie']);
@@ -105,6 +105,8 @@ test('configuration page exposes both provider actions and the manifest URL', as
   assert.match(html, /tubeInstallLinks/);
   assert.match(html, /tube-install-url/);
   assert.match(html, /Copy URL/);
+  assert.match(html, /Install Torrentz \(Torrents\)/);
+  assert.match(html, /Install TubeHub \(Selected Websites\)/);
   for (const site of ['xhamster', 'xhamster_4k', 'xvideos', 'redtube', 'tube8']) {
     assert.match(html, new RegExp(`tubesite-${site}`));
   }
@@ -166,9 +168,9 @@ test('groups same-title releases and orders them by quality', async () => {
   assert.deepEqual(inceptionIndexes, [1, 2, 3]);
 
   // Cached-first, then 1080p, then 720p.
-  assert.equal(streams[1].name, '[P2P] 1080p');
-  assert.equal(streams[2].name, '[P2P] 1080p');
-  assert.equal(streams[3].name, '[P2P] 720p');
+  assert.equal(streams[1].name, '[P2P] [1337x] 1080p');
+  assert.equal(streams[2].name, '[P2P] [ThePirateBay] 1080p');
+  assert.equal(streams[3].name, '[P2P] [1337x] 720p');
 
   // Quality variants share the same first line, which is what makes them read
   // as one title with multiple options in the client.
@@ -184,8 +186,8 @@ test('grouping can be disabled through the config segment', async () => {
 
   assert.equal(streams.length, 4);
   assert.ok(streams[0].title.startsWith('Interstellar (2014)'));
-  assert.equal(streams[1].name, '[P2P] 1080p');
-  assert.equal(streams[2].name, '[P2P] 720p');
+  assert.equal(streams[1].name, '[P2P] [1337x] 1080p');
+  assert.equal(streams[2].name, '[P2P] [1337x] 720p');
 });
 
 test('resolution selection filters lower qualities', async () => {
@@ -193,7 +195,7 @@ test('resolution selection filters lower qualities', async () => {
   const { body } = await getJson(`/${config}/stream/movie/tt1375666.json`);
 
   assert.equal(body.streams.length, 3);
-  assert.ok(body.streams.every(stream => stream.name === '[P2P] 1080p'));
+  assert.ok(body.streams.every(stream => /\[(?:1337x|ThePirateBay)\] 1080p$/.test(stream.name)));
 });
 
 test('Debrid-cached hashes become playback URLs with a cached badge', async () => {
@@ -204,12 +206,12 @@ test('Debrid-cached hashes become playback URLs with a cached badge', async () =
     const config = encodeConfig({ debridProvider: 'torbox', debridApiKey: 'test-key' });
     const { body } = await getJson(`/${config}/stream/movie/tt1375666.json`);
 
-    const cached = body.streams.find(stream => stream.name === '[TORBOX+] 1080p');
+    const cached = body.streams.find(stream => stream.name === '[TORBOX+] [1337x] 1080p');
     assert.ok(cached, 'expected a TorBox cached stream');
     assert.match(cached.url, /\/playback\/.+\/a{40}$/);
     assert.equal(cached.infoHash, undefined);
 
-    const p2p = body.streams.find(stream => stream.name === '[P2P] 720p');
+    const p2p = body.streams.find(stream => stream.name === '[P2P] [1337x] 720p');
     assert.ok(p2p);
     assert.ok(p2p.infoHash);
   } finally {
@@ -272,7 +274,7 @@ test('catalog uses real Cinemeta posters and an SVG fallback', async () => {
     assert.equal(groupedStreams.body.streams.length, 2);
     assert.deepEqual(
       groupedStreams.body.streams.map(stream => stream.name),
-      ['[P2P] 1080p', '[P2P] 720p']
+      ['[P2P] [1337x] 1080p', '[P2P] [ThePirateBay] 720p']
     );
 
     assert.match(body.metas[1].poster, /^https:\/\/placehold\.co\/300x450\/.*\.png\?text=/);
@@ -349,7 +351,7 @@ test('grouped IDs still resolve after an in-memory cache reset', async () => {
 
     assert.equal(status, 200);
     assert.equal(body.streams.length, 2);
-    assert.deepEqual(body.streams.map(stream => stream.name), ['[P2P] 1080p', '[P2P] 720p']);
+    assert.deepEqual(body.streams.map(stream => stream.name), ['[P2P] [ThePirateBay] 1080p', '[P2P] [ThePirateBay] 720p']);
   } finally {
     scrapers.searchAll = original;
   }
@@ -447,25 +449,25 @@ test('metadata catalogs search independently and route matching torrents with so
   }
 });
 
-test('each selected TubeHub website has its own stream-only addon manifest', async () => {
-  const config = encodeConfig({ tubeSites: ['xhamster'] });
+test('configuration produces one torrent addon and one combined TubeHub addon', async () => {
+  const config = encodeConfig({ tubeSites: ['xhamster', 'xhamster_4k', 'xvideos'] });
 
-  const hd = await getJson(`/${config}/tube/xhamster/manifest.json`);
-  const uhd = await getJson(`/${encodeConfig({ tubeSites: ['xhamster', 'xhamster_4k'] })}/tube/xhamster_4k/manifest.json`);
-  const disabled = await getJson(`/${config}/tube/redtube/manifest.json`);
-  const main = await getJson(`/${config}/manifest.json`);
+  const tubeHub = await getJson(`/${config}/tube/manifest.json`);
+  const legacySite = await getJson(`/${config}/tube/xhamster/manifest.json`);
+  const disabledTubeHub = await getJson(`/${encodeConfig({ tubeSites: [] })}/tube/manifest.json`);
+  const torrent = await getJson(`/${config}/manifest.json`);
 
-  assert.equal(hd.status, 200);
-  assert.equal(hd.body.name, 'xHamster (HD)');
-  assert.deepEqual(hd.body.resources, ['stream']);
-  assert.equal(uhd.status, 200);
-  assert.equal(uhd.body.name, 'xHamster (4K)');
-  assert.notEqual(hd.body.id, uhd.body.id);
-  assert.equal(disabled.status, 404);
-  assert.ok(!main.body.catalogs.some(catalog => /xHamster|xVideos|Tube8/.test(catalog.name)));
+  assert.equal(tubeHub.status, 200);
+  assert.equal(tubeHub.body.name, 'TubeHub');
+  assert.equal(tubeHub.body.id, 'community.torrentz.tubehub');
+  assert.deepEqual(tubeHub.body.resources, ['stream']);
+  assert.equal(legacySite.body.name, 'xHamster (HD)');
+  assert.equal(disabledTubeHub.status, 404);
+  assert.equal(torrent.body.id, 'community.torrentz.addon');
+  assert.ok(!torrent.body.catalogs.some(catalog => /xHamster|xVideos|Tube8/.test(catalog.name)));
 });
 
-test('site-specific addon returns TubeHub options even when torrent providers have no match', async () => {
+test('combined TubeHub addon searches all selected sites when torrents have no match', async () => {
   const originalSearch = stashbox.search;
   const originalScrape = scrapers.searchAll;
   const originalTubeSearch = tubehub.searchForScene;
@@ -491,12 +493,17 @@ test('site-specific addon returns TubeHub options even when torrent providers ha
   scrapers.searchAll = async () => [];
   tubehub.searchForScene = async (scene, sites) => {
     assert.equal(scene.title, 'The Set Up');
-    assert.deepEqual(sites, ['xhamster']);
+    assert.deepEqual(sites, ['xhamster', 'xvideos']);
     tubeLookups.push(sites);
     return [{
       name: 'TubeHub: xHamster (HD)',
       title: '🛡️ auto (HLS)',
       url: 'https://tubehub-addon.onrender.com/proxy/hls.m3u8?url=master',
+      behaviorHints: { notWebReady: false }
+    }, {
+      name: 'TubeHub: xVideos (HD)',
+      title: 'Exact title match • 1080p HLS',
+      url: 'https://tubehub-addon.onrender.com/proxy/xvideos.m3u8',
       behaviorHints: { notWebReady: false }
     }];
   };
@@ -504,14 +511,15 @@ test('site-specific addon returns TubeHub options even when torrent providers ha
   try {
     const catalog = await getJson(`/${config}/catalog/movie/torrentz_stashdb/search=The%20Set%20Up.json`);
     const sceneId = catalog.body.metas[0].id;
-    const result = await getJson(`/${config}/tube/xhamster/stream/movie/${encodeURIComponent(sceneId)}.json`);
+    const result = await getJson(`/${config}/tube/stream/movie/${encodeURIComponent(sceneId)}.json`);
     const mainResult = await getJson(`/${config}/stream/movie/${encodeURIComponent(sceneId)}.json`);
 
-    assert.equal(result.body.streams.length, 1);
+    assert.equal(result.body.streams.length, 2);
     assert.equal(result.body.streams[0].name, 'TubeHub: xHamster (HD)');
+    assert.equal(result.body.streams[1].name, 'TubeHub: xVideos (HD)');
     assert.match(result.body.streams[0].url, /tubehub-addon\.onrender\.com\/proxy/);
     assert.deepEqual(mainResult.body.streams, []);
-    assert.deepEqual(tubeLookups, [['xhamster']]);
+    assert.deepEqual(tubeLookups, [['xhamster', 'xvideos']]);
   } finally {
     stashbox.search = originalSearch;
     scrapers.searchAll = originalScrape;
@@ -519,7 +527,7 @@ test('site-specific addon returns TubeHub options even when torrent providers ha
   }
 });
 
-test('each site addon streams only its selected TubeHub source for metadata scenes', async () => {
+test('combined TubeHub addon labels the originating site for metadata scene streams', async () => {
   const originalSearch = stashbox.search;
   const originalScrape = scrapers.searchAll;
   const originalTubeSearch = tubehub.searchForScene;
@@ -557,7 +565,7 @@ test('each site addon streams only its selected TubeHub source for metadata scen
   try {
     const catalog = await getJson(`/${config}/catalog/movie/torrentz_tpdb/search=Direct%20Site%20Match%20Example.json`);
     const sceneId = catalog.body.metas[0].id;
-    const response = await getJson(`/${config}/tube/xhamster/stream/movie/${encodeURIComponent(sceneId)}.json`);
+    const response = await getJson(`/${config}/tube/stream/movie/${encodeURIComponent(sceneId)}.json`);
     assert.equal(response.body.streams.length, 1);
     assert.equal(response.body.streams[0].name, 'TubeHub: xHamster (HD)');
     assert.match(response.body.streams[0].url, /tubehub-addon\.onrender\.com\/proxy/);
