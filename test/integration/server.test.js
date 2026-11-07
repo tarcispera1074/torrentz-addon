@@ -75,7 +75,7 @@ test('serves the dynamic manifest with the shared version', async () => {
   const { status, body } = await getJson('/manifest.json');
 
   assert.equal(status, 200);
-  assert.equal(body.version, '1.3.5');
+  assert.equal(body.version, '1.3.4');
   assert.equal(body.id, 'community.torrentz.addon');
   assert.deepEqual(body.resources, ['catalog', 'meta', 'stream']);
   assert.deepEqual(body.types, ['movie']);
@@ -347,7 +347,7 @@ test('grouped IDs still resolve after an in-memory cache reset', async () => {
 test('metadata catalogs search independently and route matching torrents with source labels', async () => {
   const originalSearch = stashbox.search;
   const originalScrape = scrapers.searchAll;
-  const query = 'Sheila Ortega';
+  const query = 'Blair Williams';
   const searchedSources = [];
   const torrentQueries = [];
   const config = encodeConfig({
@@ -362,38 +362,29 @@ test('metadata catalogs search independently and route matching torrents with so
       id: `${source}-scene-42`,
       provider: source,
       providerName: source === 'tpdb' ? 'ThePornDB' : 'StashDB',
-      title: 'The Set Up',
-      date: '2021-04-29',
-      code: '',
-      studio: 'XConfessions',
-      performers: ['Sheila Ortega', 'Tommy Cabrio'],
+      title: 'Blair Williams Gets Banged By Her Stepfather',
+      date: '2025-02-03',
+      code: 'blair-williams-gets-banged-by-her-stepfather',
+      studio: 'Example Studio',
+      performers: [],
       poster: source === 'tpdb' ? 'https://images.example/scene.jpg' : 'https://images.example/duplicate.jpg',
       urls: []
     }];
   };
   scrapers.searchAll = async searchQuery => {
     torrentQueries.push(searchQuery);
-    if (searchQuery === 'The Set Up Sheila Ortega') return [];
-    if (searchQuery === 'The Set Up XConfessions' || searchQuery === 'The Set Up') {
-      return [{
-        rawTitle: 'BrazzersExxtra - Rachel Starr, Azul Hermosa - The Set Up 1080p',
-        infoHash: 'm'.repeat(40),
-        sizeBytes: 900 * 1024 * 1024,
-        seeders: 25,
-        source: 'LimeTorrents'
-      }];
-    }
-    assert.equal(searchQuery, 'Sheila Ortega');
+    if (searchQuery === 'Blair Williams Gets Banged By Her Stepfather') return [];
+    assert.equal(searchQuery, 'Blair Williams');
     return [
       {
-        rawTitle: 'XConfessions - Sheila Ortega - The Set Up 1080p WEB-DL',
+        rawTitle: 'Blair.Williams.1080p.WEB-DL',
         infoHash: 'k'.repeat(40),
         sizeBytes: 2 * 1024 * 1024 * 1024,
         seeders: 30,
         source: 'ThePirateBay'
       },
       {
-        rawTitle: 'XConfessions - Sheila Ortega - The Set Up 720p WEB-DL',
+        rawTitle: 'Blair.Williams.720p.WEB-DL',
         infoHash: 'l'.repeat(40),
         sizeBytes: 800 * 1024 * 1024,
         seeders: 20,
@@ -419,16 +410,16 @@ test('metadata catalogs search independently and route matching torrents with so
     assert.deepEqual(searchedSources, ['tpdb', 'stashdb']);
 
     const detail = await getJson(`/${config}/meta/movie/${encodeURIComponent(meta.id)}.json`);
-    assert.equal(detail.body.meta.name, 'The Set Up');
+    assert.equal(detail.body.meta.name, 'Blair Williams Gets Banged By Her Stepfather');
 
     const streams = await getJson(`/${config}/stream/movie/${encodeURIComponent(meta.id)}.json`);
     assert.equal(streams.body.streams.length, 2);
     assert.match(streams.body.streams[0].name, /\[ThePirateBay\]/);
     assert.match(streams.body.streams[1].name, /\[1337x\]/);
-    assert.ok(streams.body.streams.every(stream => stream.name.includes('[Performer match]')));
-    assert.ok(streams.body.streams.every(stream => stream.title.includes('Performer match only')));
-    assert.deepEqual(torrentQueries, ['The Set Up Sheila Ortega', 'The Set Up XConfessions', 'The Set Up', 'Sheila Ortega']);
-    assert.ok(streams.body.streams.every(stream => stream.title.startsWith('The Set Up')));
+    assert.ok(streams.body.streams.every(stream => stream.name.includes('[Title keyword match]')));
+    assert.ok(streams.body.streams.every(stream => stream.title.includes('Title keyword match only')));
+    assert.deepEqual(torrentQueries, ['Blair Williams Gets Banged By Her Stepfather', 'Blair Williams']);
+    assert.ok(streams.body.streams.every(stream => stream.title.startsWith('Blair Williams Gets Banged By Her Stepfather')));
   } finally {
     stashbox.search = originalSearch;
     scrapers.searchAll = originalScrape;

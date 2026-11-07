@@ -1,7 +1,7 @@
 const { DEFAULT_CONFIG } = require('./config');
 const debrid = require('./debrid');
 
-const ADDON_VERSION = '1.3.5';
+const ADDON_VERSION = '1.3.4';
 
 const METADATA_CATALOGS = [
   { source: 'tpdb', label: 'PornDB' },
