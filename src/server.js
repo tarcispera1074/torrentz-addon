@@ -263,7 +263,7 @@ function addTorrentSourceBadge(stream, matchKind = 'title') {
     ? 'Performer match'
     : (matchKind === 'title-keyword' ? 'Title keyword match' : null);
   const badges = [source, matchBadge].filter(Boolean);
-  if (badges.length) stream.name = stream.name.replace(/^([^\s]+)\s+/, `$1 [${badges.join('] [')}] `);
+  if (badges.length) stream.name = stream.name.replace(/^(\[[^\]]+\])\s+/, `$1 [${badges.join('] [')}] `);
   if (matchBadge) {
     stream.title += `\n⚠ ${matchBadge} only; verify this is the same scene.`;
   }
@@ -913,6 +913,18 @@ async function handleStreams(req, res, configStr) {
           formattedStreams.push(formatted);
         } else if (config.showP2PFallback) {
           const formatted = formatStream(base);
+          addTorrentSourceBadge(formatted, metadataScene ? metadataMatchKind : 'title');
+          formattedStreams.push(formatted);
+        } else {
+          // Keep uncached releases available through the configured Debrid
+          // provider. Playback will add the torrent there and wait for it to
+          // finish; this is not a P2P fallback.
+          const formatted = formatStream({
+            ...base,
+            debridCached: false,
+            debridProvider: config.debridProvider.toUpperCase()
+          });
+          formatted.url = `${protocol}://${host}/playback/${encodeURIComponent(configStr)}/${torrent.infoHash}`;
           addTorrentSourceBadge(formatted, metadataScene ? metadataMatchKind : 'title');
           formattedStreams.push(formatted);
         }

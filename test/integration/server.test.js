@@ -76,7 +76,7 @@ test('serves the dynamic manifest with the shared version', async () => {
   const { status, body } = await getJson('/manifest.json');
 
   assert.equal(status, 200);
-  assert.equal(body.version, '1.4.3');
+  assert.equal(body.version, '1.4.4');
   assert.equal(body.id, 'community.torrentz.addon');
   assert.deepEqual(body.resources, ['catalog', 'meta', 'stream']);
   assert.deepEqual(body.types, ['movie']);
@@ -107,6 +107,7 @@ test('configuration page exposes both provider actions and the manifest URL', as
   assert.match(html, /Copy URL/);
   assert.match(html, /Install Torrentz \(Torrents\)/);
   assert.match(html, /Install TubeHub \(Selected Websites\)/);
+  assert.match(html, /off = send through Debrid/);
   for (const site of ['xhamster', 'xhamster_4k', 'xvideos', 'redtube', 'tube8']) {
     assert.match(html, new RegExp(`tubesite-${site}`));
   }
@@ -446,6 +447,55 @@ test('metadata catalogs search independently and route matching torrents with so
     stashbox.search = originalSearch;
     scrapers.searchAll = originalScrape;
     tubehub.searchForScene = originalTubeSearch;
+  }
+});
+
+test('uncached metadata matches use TorBox downloads when P2P fallback is disabled', async () => {
+  const originalSearch = stashbox.search;
+  const originalScrape = scrapers.searchAll;
+  const originalCacheCheck = debrid.checkCache;
+  const config = encodeConfig({
+    providers: ['tpb'],
+    metadataSources: ['stashdb'],
+    metadataApiKeys: { stashdb: 'stashdb-torbox-test-key' },
+    debridProvider: 'torbox',
+    debridApiKey: 'torbox-test-key',
+    showP2PFallback: false,
+    tubeSites: []
+  });
+
+  stashbox.search = async () => ([{
+    id: 'midnight-snack-torbox-test-scene',
+    provider: 'stashdb',
+    providerName: 'StashDB',
+    title: 'Midnight Snack',
+    studio: 'Babes',
+    performers: ['Blair Williams'],
+    poster: 'https://images.example/midnight-snack.jpg',
+    urls: []
+  }]);
+  scrapers.searchAll = async () => ([{
+    rawTitle: 'Babes - Blair Williams - Midnight Snack 1080p',
+    infoHash: '9'.repeat(40),
+    sizeBytes: 2 * 1024 * 1024 * 1024,
+    seeders: 18,
+    source: 'ThePirateBay'
+  }]);
+  debrid.checkCache = async () => new Set();
+
+  try {
+    const catalog = await getJson(`/${config}/catalog/movie/torrentz_stashdb/search=Midnight%20Snack.json`);
+    const sceneId = catalog.body.metas[0].id;
+    const streams = await getJson(`/${config}/stream/movie/${encodeURIComponent(sceneId)}.json`);
+
+    assert.equal(streams.body.streams.length, 1);
+    assert.equal(streams.body.streams[0].name, '[TORBOX download] [ThePirateBay] 1080p');
+    assert.match(streams.body.streams[0].url, /\/playback\/.+\/9{40}$/);
+    assert.equal(streams.body.streams[0].infoHash, undefined);
+  } finally {
+    stashbox.search = originalSearch;
+    scrapers.searchAll = originalScrape;
+    debrid.checkCache = originalCacheCheck;
   }
 });
 
